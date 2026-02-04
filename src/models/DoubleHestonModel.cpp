@@ -4,60 +4,51 @@
 
 using namespace std::complex_literals;
 
-DoubleHestonModel::DoubleHestonModel(const Parameters &params) : p_(params) {}
+DoubleHestonModel::DoubleHestonModel(const DoubleParameters &params)
+    : p_(params) {}
 
 // =========================================================
 // 1. EUROPEAN OPTION IMPLEMENTATION
 // =========================================================
 
-Complex DoubleHestonModel::get_characteristic_function(
-    double v, double t, double lambda, bool measure_shift_b) const {
-  // a = kappa * theta
-  // b = kappa (or kappa - rho*sigma if shifted)
-  // s = sigma (vol of vol)
-  // t is the time to maturity
+Complex DoubleHestonModel::compute_component(double v, double T, double kappa,
+                                             double theta, double sigma,
+                                             double rho, double v0) const {
+  double a = kappa * theta;
+  double b = kappa;
+  double s = sigma;
+  double s2 = s * s;
 
-  double a1 = p_.kappa1 * p_.theta1;
-  double b1 = p_.kappa1;
-  double s1 = p_.sigma1;
-  double rho1 = p_.rho1;
-
-  double a2 = p_.kappa2 * p_.theta2;
-  double b2 = p_.kappa2;
-  double s2 = p_.sigma2;
-  double rho2 = p_.rho2;
-
-  // Adjust 'b' for measure change (P1 vs P2)
-  if (measure_shift_b) {
-    b1 -= rho1 * s1;
-    b2 -= rho2 * s2;
-  }
-
-  double s1_sq = s1 * s1;
-  double s2_sq = s2 * s2;
-
-  // --- Albrecher et al. (2006) Stable Formulation ---
-  // TO BE WRITTEN FROM HERE!!!!!!!
+  // We use the "Stable" Little Heston Form (Albrecher et al.)
+  // Note: lambda is usually set to 0.5i for the standard transform
   Complex b_rhosv1i = b - rho * s * v * 1i;
-  Complex Delta_root =
-      std::sqrt(b_rhosv1i * b_rhosv1i + s2 * v * (v + 2.0 * lambda * 1i));
 
-  // Stable 'g' (Minus over Plus)
+  // The term v*(v + i) comes from the standard transform for P-measure
+  Complex Delta_root = std::sqrt(b_rhosv1i * b_rhosv1i + s2 * (v * v + v * 1i));
+
   Complex g = (b_rhosv1i - Delta_root) / (b_rhosv1i + Delta_root);
-
-  // Pre-calculate Exponential
-  Complex exp_Dt = std::exp(-Delta_root * t);
-
-  // Calculate term_t
+  Complex exp_Dt = std::exp(-Delta_root * T);
   Complex term_t = (b_rhosv1i - Delta_root) / s2;
 
-  Complex phi = (p_.r * v * 1i + a * term_t) * t -
-                2.0 * a / s2 * std::log((1.0 - g * exp_Dt) / (1.0 - g));
-
-  // Calculate psi (Variance component)
-  Complex psi = p_.v0 * term_t * ((1.0 - exp_Dt) / (1.0 - g * exp_Dt));
+  Complex phi =
+      a * (term_t * T - 2.0 / s2 * std::log((1.0 - g * exp_Dt) / (1.0 - g)));
+  Complex psi = v0 * term_t * ((1.0 - exp_Dt) / (1.0 - g * exp_Dt));
 
   return std::exp(phi + psi);
+}
+
+Complex DoubleHestonModel::get_characteristic_function(double v,
+                                                       double T) const {
+  // Calculate the component for the first variance process
+  Complex cf1 =
+      compute_component(v, T, p_.kappa1, p_.theta1, p_.sigma1, p_.rho1, p_.v01);
+
+  // Calculate the component for the second variance process
+  Complex cf2 =
+      compute_component(v, T, p_.kappa2, p_.theta2, p_.sigma2, p_.rho2, p_.v02);
+
+  // The total CF is the product of the two
+  return cf1 * cf2;
 }
 
 // =========================================================

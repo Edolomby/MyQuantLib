@@ -29,7 +29,6 @@ public:
   const Parameters &get_params() const { return p_; }
 
   // 1. European Option Math (Characteristic Function)
-  // Implements the "Stable" form from Albrecher et al.
   Complex get_characteristic_function(double v, double t, double lambda,
                                       bool measure_shift_b) const;
 

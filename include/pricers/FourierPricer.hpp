@@ -29,12 +29,15 @@ double price_european_fourier(const Model &model, double S0, double K, double T,
   // 3. Configure Engine
   FourierEngine engine(engine_cfg);
 
-  // Oscillation hint: High moneyness = higher frequency oscillation
-  double moneyness_freq = std::abs(std::log(1.0 / K_norm));
-
+  // Oscillation hint: High moneyness = higher frequency oscillation =
+  // DEPRECATED
+  // double moneyness_freq = std::abs(std::log(1.0 / K_norm));
   // 4. Integrate
-  double I1 = engine.calculate_integral(strat_P1, moneyness_freq, T);
-  double I2 = engine.calculate_integral(strat_P2, moneyness_freq, T);
+  // double I1 = engine.calculate_integral(strat_P1, moneyness_freq, T);
+  // double I2 = engine.calculate_integral(strat_P2, moneyness_freq, T);
+  // 4. Integrate without oscillation hint
+  double I1 = engine.calculate_integral(strat_P1, T);
+  double I2 = engine.calculate_integral(strat_P2, T);
 
   // 5. Gil-Pelaez Formula
   constexpr double INV_PI = std::numbers::inv_pi_v<double>; // 1/pi

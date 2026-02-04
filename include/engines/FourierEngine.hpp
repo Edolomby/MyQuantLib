@@ -24,10 +24,13 @@ public:
   // 2. double magnitude(double xi) const;   -> The envelope for bound finding
   // -------------------------------------------------------------------------
   template <typename Integrand>
-  double calculate_integral(const Integrand &func, double osc_freq_hint,
-                            double residual_T) const {
+  double calculate_integral(const Integrand &func, double residual_T) const {
 
-    // 1. Find Upper Bound (Truncation)
+    // 1. Handle Singularity at 0 (Head)
+    constexpr double LOW_BOUND = 1e-8;
+    double total_integral = LOW_BOUND * func(LOW_BOUND);
+
+    /* // 1. Find Upper Bound (Truncation)
     double right_limit = find_upper_bound(func, residual_T);
 
     // 2. Determine Chunk Size (Dual Constraint Strategy)
@@ -49,10 +52,10 @@ public:
     double chunk_size = std::min(osc_chunk_size, parallel_chunk_size);
 
     // some debug prints
-    /* std::cout << "Right Limit: " << right_limit << std::endl;
-    std::cout << "Osc Chunk Size: " << osc_chunk_size << std::endl;
-    std::cout << "Parallel Chunk Size: " << parallel_chunk_size << std::endl;
-    std::cout << "Chunk Size: " << chunk_size << std::endl; */
+    // std::cout << "Right Limit: " << right_limit << std::endl;
+    // std::cout << "Osc Chunk Size: " << osc_chunk_size << std::endl;
+    // std::cout << "Parallel Chunk Size: " << parallel_chunk_size << std::endl;
+    // std::cout << "Chunk Size: " << chunk_size << std::endl;
 
     // D. Safety Floor (Avoid overhead from microscopic chunks)
     if (chunk_size < 1e-3)
@@ -74,10 +77,60 @@ public:
     }
 
     // 4. Parallel Integration (OpenMP)
-    // right end point rule on the first small chunk
-    double total_integral = LOW_BOUND * func(LOW_BOUND);
 
     // Scale tolerance per chunk to maintain total error budget
+    double chunk_tol = (chunks.empty())
+                           ? cfg_.tolerance
+                           : cfg_.tolerance / (double)chunks.size(); */
+
+    // 2. Find Upper Bound
+    double right_limit = find_upper_bound(func, residual_T);
+    double interval_width = right_limit - LOW_BOUND;
+
+    // 3. SMART GEOMETRIC GRID
+    // A. Determine Target N (Load Balancing)
+    // 4 tasks per thread ensures stragglers don't block the queue.
+    int num_threads = omp_get_max_threads();
+    int N = std::max(8, num_threads * 4);
+
+    // B. Geometric Multiplier
+    // 1.10x growth is smooth enough for the peak, fast enough for the tail.
+    constexpr double multiplier = 1.08;
+
+    // C. Calculate Start Step (Exact Formula)
+    // a = L * (r - 1) / (r^N - 1)
+    double current_step =
+        interval_width * (multiplier - 1.0) / (std::pow(multiplier, N) - 1.0);
+
+    // D. Generate Chunks
+    std::vector<std::pair<double, double>> chunks;
+    chunks.reserve(N);
+
+    double current_u = LOW_BOUND;
+
+    for (int i = 0; i < N; ++i) {
+      double next_u = std::min(current_u + current_step, right_limit);
+
+      if (next_u <= current_u)
+        break;
+
+      chunks.push_back({current_u, next_u});
+      current_u = next_u;
+
+      // Break if we hit the limit (floating point safety)
+      if (std::abs(current_u - right_limit) < 1e-9)
+        break;
+
+      current_step *= multiplier;
+    }
+
+    // Edge case: If floating point math left a tiny gap at the end
+    if (current_u < right_limit - 1e-9) {
+      chunks.push_back({current_u, right_limit});
+    }
+
+    // 4. Parallel Integration
+    // Linear tolerance scaling
     double chunk_tol = (chunks.empty())
                            ? cfg_.tolerance
                            : cfg_.tolerance / (double)chunks.size();

@@ -7,6 +7,7 @@
 #include <iostream>
 #include <limits>
 #include <omp.h> // Include OpenMP
+#include <string>
 #include <vector>
 
 // Includes
@@ -149,7 +150,7 @@ std::pair<double, double> EU_heston_delta(double Y0, double a, double b,
       (moneyness < 0.01) ? right_limit
                          : std::max(5.0, std::min(6.28318 / moneyness, 100.0));
   unsigned num_threads = omp_get_max_threads();
-  unsigned target_chunks = std::max(8u, num_threads * 4u);
+  unsigned target_chunks = std::max(8u, num_threads * 32u);
   double parallel_chunk_size = right_limit / target_chunks;
 
   // C. Winner Takes All (Smallest constraint wins)
@@ -162,6 +163,7 @@ std::pair<double, double> EU_heston_delta(double Y0, double a, double b,
     double next = std::min(current + chunk_size, right_limit);
     chunks.push_back({current, next});
     current = next;
+    chunk_size *= 1.4;
   }
 
   // 4. Parallel Integration
@@ -191,95 +193,149 @@ std::pair<double, double> EU_heston_delta(double Y0, double a, double b,
 } // namespace Legacy
 
 // =============================================================================
-// MAIN BENCHMARK WITH TIMING
+// MAIN BENCHMARK WITH COMPREHENSIVE TEST SUITE
 // =============================================================================
 
 int main() {
-  std::cout << "========================================================\n";
-  std::cout << "  HESTON PERFORMANCE BENCHMARK: NEW vs LEGACY (PARALLEL)\n";
-  std::cout << "  Iterations per strike: 1000\n";
-  std::cout << "========================================================\n\n";
+  std::cout << "============================================================="
+               "=====================\n";
+  std::cout << "  HESTON FOURIER PRICER BENCHMARK: NEW ENGINE vs LEGACY "
+               "(PARALLEL)\n";
+  std::cout << "  Scenario Suite: Comprehensive Stress Test\n";
+  std::cout << "============================================================="
+               "=====================\n\n";
 
-  // 1. Setup
-  double S0 = 100.0, r = 0.025, q = 0.0, T = 1.0;
-  HestonModel::Parameters p{1.5768, 0.0398, 0.5751, -0.5711, 0.0175};
-  HestonModel new_model(p);
+  // --- CONFIGURATION ---
+  struct TestCase {
+    std::string name;
+    double S0, T, r, v0, kappa, theta, sigma, rho;
+  };
 
-  // Legacy Params
-  double param_a = p.kappa * p.theta;
-  double param_b = p.kappa;
-  double param_Y0 = p.v0;
-  double param_s = p.sigma;
+  // Define Stress Scenarios (from provided snippet)
+  double h_vol = 3.0, m_vol = 0.3;
+  double h_rho = -0.9, m_rho = -0.7, l_rho = -0.5;
+  double h_kappa = 2.0, m_kappa = 1.0;
+  double s_T = 0.08, m_T = 1.0, l_T = 3.0, vl_T = 5.0;
 
-  std::vector<double> strikes = {80.0, 90.0, 100.0, 110.0, 120.0};
-  std::vector<double> legacy_times;
-  std::vector<double> new_times;
-  std::vector<double> speedups;
+  std::vector<TestCase> tests = {
+      {"Baseline", 100.0, m_T, 0.05, 0.09, m_kappa, 0.09, m_vol, l_rho},
+      {"Short Mat 1M", 100.0, s_T, 0.05, 0.09, m_kappa, 0.09, m_vol, l_rho},
+      {"Extr Short -0.9", 100.0, s_T, 0.05, 0.09, h_kappa, 0.09, h_vol, h_rho},
+      {"Extr Med -0.9", 100.0, m_T, 0.05, 0.09, h_kappa, 0.09, h_vol, h_rho},
+      {"Extr Long -0.9", 100.0, l_T, 0.05, 0.09, h_kappa, 0.09, h_vol, h_rho},
+      {"Extr V.Long -0.9", 100.0, vl_T, 0.05, 0.09, h_kappa, 0.09, h_vol,
+       h_rho}};
 
-  // Config for New Engine (Matched to Legacy)
+  struct Moneyness {
+    std::string label;
+    double mult;
+  };
+  std::vector<Moneyness> moneys = {{"ITM", 0.9}, {"ATM", 1.0}, {"OTM", 1.1}};
+
+  // Output Vectors for Table
+  std::vector<std::string> t_scenario, t_moneyness;
+  std::vector<double> t_price_legacy, t_price_new, t_diff;
+  std::vector<double> t_time_legacy, t_time_new, t_speedup;
+
+  // Config for New Engine
   FourierEngine::Config cfg;
   cfg.tolerance = 1e-9;
-  cfg.start_bound_guess = 20.0; // Use parameter name from your Engine logic
+  cfg.start_bound_guess = 20.0;
 
-  // Prevent compiler optimization
+  constexpr int ITERATIONS = 1000;
   volatile double sink_legacy = 0;
   volatile double sink_new = 0;
-  constexpr int ITERATIONS = 1000;
 
-  // 2. Loop
-  for (double K : strikes) {
+  // --- RUN TESTS ---
+  for (const auto &t : tests) {
 
-    // --- A. BENCHMARK LEGACY (NOW PARALLEL) ---
-    {
-      // Warmup
-      Legacy::EU_heston_delta(param_Y0, param_a, param_b, param_s, S0, r, q,
-                              p.rho, T, K, true);
+    // 1. Setup Model Parameters
+    // New Engine Params
+    HestonModel::Parameters p;
+    p.kappa = t.kappa;
+    p.theta = t.theta;
+    p.sigma = t.sigma;
+    p.rho = t.rho;
+    p.v0 = t.v0;
+    HestonModel new_model(p);
 
-      auto start = std::chrono::high_resolution_clock::now();
-      for (int i = 0; i < ITERATIONS; ++i) {
-        auto res = Legacy::EU_heston_delta(param_Y0, param_a, param_b, param_s,
-                                           S0, r, q, p.rho, T, K, true);
-        sink_legacy += res.first;
+    // Legacy Params (Mapping)
+    double param_a = t.kappa * t.theta;
+    double param_b = t.kappa;
+    double param_Y0 = t.v0;
+    double param_s = t.sigma;
+    double q = 0.0; // Assuming q=0 as per snippet
+
+    for (const auto &m : moneys) {
+      double K = t.S0 * m.mult;
+
+      // --- A. BENCHMARK LEGACY ---
+      double legacy_price = 0.0;
+      double legacy_ns = 0.0;
+      {
+        // Warmup
+        Legacy::EU_heston_delta(param_Y0, param_a, param_b, param_s, t.S0, t.r,
+                                q, t.rho, t.T, K, true);
+
+        auto start = std::chrono::high_resolution_clock::now();
+        for (int i = 0; i < ITERATIONS; ++i) {
+          auto res =
+              Legacy::EU_heston_delta(param_Y0, param_a, param_b, param_s, t.S0,
+                                      t.r, q, t.rho, t.T, K, true);
+          sink_legacy += res.first;
+          if (i == 0)
+            legacy_price = res.first;
+        }
+        auto end = std::chrono::high_resolution_clock::now();
+        legacy_ns =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(end - start)
+                .count() /
+            (double)ITERATIONS;
       }
-      auto end = std::chrono::high_resolution_clock::now();
-      double avg_ns =
-          std::chrono::duration_cast<std::chrono::nanoseconds>(end - start)
-              .count() /
-          (double)ITERATIONS;
-      legacy_times.push_back(avg_ns);
-    }
 
-    // --- B. BENCHMARK NEW ENGINE ---
-    {
-      // Warmup
-      price_european_fourier(new_model, S0, K, T, r, q, true, cfg);
+      // --- B. BENCHMARK NEW ENGINE ---
+      double new_price = 0.0;
+      double new_ns = 0.0;
+      {
+        // Warmup
+        price_european_fourier(new_model, t.S0, K, t.T, t.r, q, true, cfg);
 
-      auto start = std::chrono::high_resolution_clock::now();
-      for (int i = 0; i < ITERATIONS; ++i) {
-        double price =
-            price_european_fourier(new_model, S0, K, T, r, q, true, cfg);
-        sink_new += price;
+        auto start = std::chrono::high_resolution_clock::now();
+        for (int i = 0; i < ITERATIONS; ++i) {
+          double price = price_european_fourier(new_model, t.S0, K, t.T, t.r, q,
+                                                true, cfg);
+          sink_new += price;
+          if (i == 0)
+            new_price = price;
+        }
+        auto end = std::chrono::high_resolution_clock::now();
+        new_ns =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(end - start)
+                .count() /
+            (double)ITERATIONS;
       }
-      auto end = std::chrono::high_resolution_clock::now();
-      double avg_ns =
-          std::chrono::duration_cast<std::chrono::nanoseconds>(end - start)
-              .count() /
-          (double)ITERATIONS;
-      new_times.push_back(avg_ns);
-    }
 
-    speedups.push_back(legacy_times.back() / new_times.back());
+      // Store Results
+      t_scenario.push_back(t.name);
+      t_moneyness.push_back(m.label);
+      t_price_legacy.push_back(legacy_price);
+      t_price_new.push_back(new_price);
+      t_diff.push_back(std::abs(legacy_price - new_price));
+      t_time_legacy.push_back(legacy_ns);
+      t_time_new.push_back(new_ns);
+      t_speedup.push_back(legacy_ns / new_ns);
+    }
   }
 
-  // 3. Print Timing Results
-  utils::printVectors(
-      {"Strike", "Legacy (ns)", "New Engine (ns)", "Speedup (X)"}, strikes,
-      legacy_times, new_times, speedups);
+  // --- PRINT RESULTS TABLE ---
+  utils::printVectors({"Scenario", "Moneyness", "Legacy Price", "New Price",
+                       "Diff", "Legacy(ns)", "New(ns)", "Speedup"},
+                      t_scenario, t_moneyness, t_price_legacy, t_price_new,
+                      t_diff, t_time_legacy, t_time_new, t_speedup);
 
   std::cout << "\nNotes:\n";
-  std::cout << " - Speedup ~1.0 means Zero Overhead abstraction.\n";
-  std::cout
-      << " - Speedup > 1.0 means New Engine has better logic/optimization.\n";
+  std::cout << " - Speedup > 1.0 means New Engine is faster.\n";
+  std::cout << " - Diff should be negligible (< 1e-7).\n";
   std::cout << " - Sink values (ignore): " << sink_legacy << ", " << sink_new
             << "\n";
 
