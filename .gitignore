@@ -35,3 +35,14 @@
 build/
 cmake-build-debug/
 bin/
+
+# Boost Library (Added today)
+boost_1_90_0/
+
+# Ignore editor/tool caches
+.cache/
+.vscode/
+build/
+
+# Ignore compiled binaries
+benchmark_heston
