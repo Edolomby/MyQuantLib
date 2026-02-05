@@ -32,11 +32,6 @@ inline double normcdfinv_as241(double p) {
   const double p_low = 0.02425;
   const double p_high = 1.0 - p_low;
 
-  if (p <= 0.0)
-    return -std::numeric_limits<double>::infinity();
-  if (p >= 1.0)
-    return std::numeric_limits<double>::infinity();
-
   // Rational approximation for central region
   if (p > p_low && p < p_high) {
     double q = p - 0.5;
