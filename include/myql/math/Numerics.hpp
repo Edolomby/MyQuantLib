@@ -1,18 +1,14 @@
 #pragma once
-#include <boost/random/mersenne_twister.hpp>
-#include <boost/random/uniform_real_distribution.hpp>
 #include <cmath>
 
-namespace numerics {
-namespace random {
+// =============================================================================
+// 1. HIGH-PERFORMANCE NUMERICS
+// =============================================================================
+namespace Numerics {
 
-// Fast Normal Inverse (Acklam's algorithm)
-// -----------------------------------------------------------------------------
-// Inverse Normal Cumulative Distribution Function (AS241 / Acklam)
-// Precision: ~1e-16 (Double Precision)
-// -----------------------------------------------------------------------------
+// Acklam's Algorithm (AS241) for Inverse Normal CDF
+// Precision: ~1e-16. Faster than std::erfc based implementations.
 inline double normcdfinv_as241(double p) {
-  // Coefficients for the rational approximation
   static const double a[] = {-3.969683028665376e+01, 2.209460984245205e+02,
                              -2.759285104469687e+02, 1.383577518672690e+02,
                              -3.066479806614716e+01, 2.506628277459239e+00};
@@ -28,11 +24,9 @@ inline double normcdfinv_as241(double p) {
   static const double d[] = {7.784695709041462e-03, 3.224671290700398e-01,
                              2.445134137142996e+00, 3.754408661907416e+00};
 
-  // Define break-points
   const double p_low = 0.02425;
   const double p_high = 1.0 - p_low;
 
-  // Rational approximation for central region
   if (p > p_low && p < p_high) {
     double q = p - 0.5;
     double r = q * q;
@@ -42,16 +36,12 @@ inline double normcdfinv_as241(double p) {
            (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1.0);
   }
 
-  // Rational approximation for tails
   double q = (p <= p_low) ? p : 1.0 - p;
   double r = std::sqrt(-2.0 * std::log(q));
-
   double x =
       (((((c[0] * r + c[1]) * r + c[2]) * r + c[3]) * r + c[4]) * r + c[5]) /
       ((((d[0] * r + d[1]) * r + d[2]) * r + d[3]) * r + 1.0);
 
   return (p <= p_low) ? x : -x;
 }
-
-} // namespace random
-} // namespace numerics
+} // namespace Numerics
