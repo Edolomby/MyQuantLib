@@ -4,12 +4,12 @@
 │   ├── engines
 │   │   ├── fourier
 │   │   │   ├── FourierEngine.hpp
-│   │   │   └── FourierPricer.hpp
+│   │   │   ├── FourierPricer.hpp
+│   │   │   └── kernels
+│   │   │       └── GilPeleazKernel.hpp
 │   │   └── montecarlo
 │   │       └── MonteCarloEngine.hpp
 │   ├── instruments
-│   │   ├── kernels
-│   │   │   └── EuropeanStrategy.hpp
 │   │   ├── options
 │   │   │   ├── Asian.hpp
 │   │   │   ├── European.hpp
@@ -33,6 +33,8 @@
 │   │           ├── JumpPolicies.hpp
 │   │           └── VolSchemes.hpp
 │   └── utils
-│       └── TablePrinter.hpp
+│       ├── TablePrinter.hpp
+│       └── VectorOps.hpp
 └── tests
+
 ```

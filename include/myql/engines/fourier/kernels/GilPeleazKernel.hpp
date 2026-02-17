@@ -6,36 +6,39 @@
 // =============================================================================
 // EUROPEAN OPTION STRATEGY (Generic)
 // Implements the Gil-Pelaez Integrand for P1 and P2 probabilities.
+// It accepts ANY 'Traits' class as a template parameter
 // =============================================================================
 
-template <typename Model> class EuropeanStrategy {
+template <typename Model, typename Traits> class GilPelaezKernel {
 public:
   using Complex = std::complex<double>;
 
   // Constructor
-  EuropeanStrategy(const Model &model, double T, double r, double q,
-                   double K_norm, bool is_P2)
+  GilPelaezKernel(const Model &model, double T, double r, double q,
+                  double K_norm, bool is_P2)
       : model_(model), T_(T), logK_(std::log(K_norm)), is_P2_(is_P2) {
     rate_drift_ = (r - q) * T_;
   }
 
   // -------------------------------------------------------------------------
-  // 1. The Integrand: Re[ e^{-i*u*k} * Phi(u_shifted) / (i*u) ]
+  // The Integrand: Re[ e^{-i*u*k} * Phi(u_shifted) / (i*u) ]
   // -------------------------------------------------------------------------
   double operator()(double u_real) const {
-    // Limit at u=0 is handled by the caller (Gil-Pelaez formula 0.5 + ...)
-    if (std::abs(u_real) < 1e-12)
-      return 0.0; // Soft fallback, though engine avoids 0.
+    // Limit at u=0 is handled by the integration rules!
+    // Rightpoint rule near 0, so 0 is never called!
 
     Complex u(u_real, 0.0);
     const Complex I(0.0, 1.0);
 
-    // 1. Calculate Martingale CF (Heston + Compensated Jumps)
+    // Shift Logic (The "Measure Change" specific to Gil-Pelaez)
+    // P1 uses (u - i), P2 uses u
     Complex u_shifted = is_P2_ ? u : (u - I);
-    Complex psi_martingale = AffineTraits<Model>::characteristic_log_martingale(
-        model_, u_shifted, T_);
 
-    // 2. Add Risk-Free Rate
+    // Calculate the log CF (Heston + Compensated Jumps)
+    Complex psi_martingale =
+        Traits::characteristic_log_martingale(model_, u_shifted, T_);
+
+    // Add Risk-Free Rate
     // exp( i*u * (r-q)T )
     Complex total_exponent = (I * u * rate_drift_) + psi_martingale;
 
@@ -46,7 +49,7 @@ public:
   }
 
   // -------------------------------------------------------------------------
-  // 2. Magnitude (For Upper Bound Search)
+  // Magnitude (For Upper Bound Search)
   // -------------------------------------------------------------------------
   // Used by the engine to decide where to cut the integral (0 to Inf).
   double magnitude_sq(double u_real) const {

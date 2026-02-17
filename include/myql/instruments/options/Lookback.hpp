@@ -15,29 +15,31 @@ template <typename PayoffT, bool FixedStrike> class LookbackOption {
 public:
   using Tracker = TrackerLookback;
   using ResultType = double;
+  using PayoffType = PayoffT;
 
   LookbackOption(double K, double T) : strike_(K), T_(T) {}
 
   template <typename State> double calculate(const State &state) const {
-    // Determine Call/Put to select Min or Max
-    constexpr bool is_call =
-        std::is_same_v<PayoffT, PayoffVanilla<OptionType::Call>>;
+    double res;
+    calculate_to_buffer(state, res);
+    return res;
+  }
+
+  template <typename State>
+  void calculate_to_buffer(const State &state, double &buffer) const {
+    // We use the static constexpr Type we added to the Payoff structs
+    constexpr bool is_call = (PayoffT::Type == OptionType::Call);
 
     if constexpr (FixedStrike) {
-      // Fixed Strike
-      // Call: max(Max - K, 0) -> Use maxLogS (which is Max Price)
-      // Put:  max(K - Min, 0) -> Use minLogS (which is Min Price)
       double extreme = is_call ? state.maxLogS : state.minLogS;
-      return payoff_func_(extreme, strike_);
+      buffer = payoff_func_(extreme, strike_);
     } else {
-      // Floating Strike
-      // Call: max(S_T - Min, 0) -> Strike is Min
-      // Put:  max(Max - S_T, 0) -> Strike is Max
       double floating_strike = is_call ? state.minLogS : state.maxLogS;
-      return payoff_func_(state.logS, floating_strike);
+      buffer = payoff_func_(state.logS, floating_strike);
     }
   }
 
+  size_t size() const { return 1; }
   double get_maturity() const { return T_; }
 };
 
@@ -52,26 +54,23 @@ template <typename PayoffT> class LookbackFixedStrip {
 public:
   using Tracker = TrackerLookback;
   using ResultType = std::vector<double>;
+  using PayoffType = PayoffT;
 
   LookbackFixedStrip(const std::vector<double> &strikes, double T)
       : strikes_(strikes), T_(T) {}
 
   template <typename State>
-  std::vector<double> calculate(const State &state) const {
-    std::vector<double> results;
-    results.reserve(strikes_.size());
-
-    constexpr bool is_call =
-        std::is_same_v<PayoffT, PayoffVanilla<OptionType::Call>>;
-
-    // Optimization: Fetch extreme value ONCE
+  void calculate_to_buffer(const State &state,
+                           std::vector<double> &buffer) const {
+    constexpr bool is_call = (PayoffT::Type == OptionType::Call);
     double extreme = is_call ? state.maxLogS : state.minLogS;
 
-    for (double K : strikes_) {
-      results.push_back(payoff_func_(extreme, K));
+    for (size_t i = 0; i < strikes_.size(); ++i) {
+      buffer[i] = payoff_func_(extreme, strikes_[i]);
     }
-    return results;
   }
 
+  size_t size() const { return strikes_.size(); }
   double get_maturity() const { return T_; }
+  const std::vector<double> &get_strikes() const { return strikes_; }
 };

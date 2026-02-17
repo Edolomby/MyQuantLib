@@ -21,7 +21,7 @@
 #include <myql/utils/TablePrinter.hpp>
 
 // -----------------------------------------------------------------------------
-// GLOBAL RESULTS STORAGE (DECOMPOSED FOR printVectors)
+// GLOBAL RESULTS STORAGE
 // -----------------------------------------------------------------------------
 struct ResultStorage {
   std::vector<std::string> model;
@@ -52,24 +52,30 @@ void run_smile_test(const std::string &name, const ModelType &model,
   std::vector<double> strike_pcts = {0.8, 0.9, 1.0, 1.1, 1.2};
 
   for (double T : maturities) {
+    // 1. CALCULATE STRIKES FOR THIS MATURITY
+    std::vector<double> strikes;
     for (double k_pct : strike_pcts) {
-      double K = S0 * k_pct;
+      strikes.push_back(S0 * k_pct);
+    }
 
-      // 1. Reference Price
-      double p_fourier =
-          price_european_fourier(model, S0, K, T, r, q, true, f_cfg);
+    // 2. DEFINE THE STRIP INSTRUMENT
+    using StripT = EuropeanStrip<PayoffVanilla<OptionType::Call>>;
+    StripT smile_strip(strikes, T);
 
-      // 2. MC Price
-      using InstrumentT = EuropeanOption<PayoffVanilla<OptionType::Call>>;
-      InstrumentT call_option(K, T);
+    // 3. VECTORIZED FOURIER PRICING
+    // Our updated Fourier pricer handles the strip by looping internally.
+    std::vector<double> p_fourier =
+        price_fourier(model, S0, r, q, smile_strip, f_cfg);
 
-      MonteCarloEngine<ModelType, StepperType, InstrumentT> engine(model,
-                                                                   mc_cfg);
-      auto res_mc = engine.calculate(S0, r, q, call_option);
+    // 4. VECTORIZED MONTE CARLO PRICING
+    // The engine now uses the Buffered Pattern: 1 path = N prices.
+    MonteCarloEngine<ModelType, StepperType, StripT> engine(model, mc_cfg);
+    auto [mc_prices, mc_errors] = engine.calculate(S0, r, q, smile_strip);
 
-      // 3. Statistical Analysis (Z-Score)
-      double diff = res_mc.first - p_fourier;
-      double z = (res_mc.second > 1e-12) ? diff / res_mc.second : 0.0;
+    // 5. STORE RESULTS (Flatten the vectors for the TablePrinter)
+    for (size_t i = 0; i < strikes.size(); ++i) {
+      double diff = mc_prices[i] - p_fourier[i];
+      double z = (mc_errors[i] > 1e-12) ? diff / mc_errors[i] : 0.0;
 
       std::string stat_tag = "OK";
       if (std::abs(z) > 4.0)
@@ -77,13 +83,12 @@ void run_smile_test(const std::string &name, const ModelType &model,
       else if (std::abs(z) > 2.0)
         stat_tag = "[WARN]";
 
-      // 4. Store for TablePrinter
       global_storage.model.push_back(name);
       global_storage.T.push_back(T);
-      global_storage.K.push_back(K);
-      global_storage.fourier.push_back(p_fourier);
-      global_storage.mc.push_back(res_mc.first);
-      global_storage.stderr.push_back(res_mc.second);
+      global_storage.K.push_back(strikes[i]);
+      global_storage.fourier.push_back(p_fourier[i]);
+      global_storage.mc.push_back(mc_prices[i]);
+      global_storage.stderr.push_back(mc_errors[i]);
       global_storage.z_score.push_back(z);
       global_storage.status.push_back(stat_tag);
     }
@@ -93,7 +98,7 @@ void run_smile_test(const std::string &name, const ModelType &model,
 int main() {
   std::cout << "==============================================================="
                "=====\n";
-  std::cout << "  ASVJ MC SEVERAL STRIKES VERIFICATION SUITE\n";
+  std::cout << "  ASVJ MC SMILE VERIFICATION SUITE\n";
   std::cout << "==============================================================="
                "=====\n";
 

@@ -5,6 +5,9 @@
 #include <myql/models/asvj/core/ASVJmodel.hpp>
 #include <omp.h>
 
+// UTILS
+#include <myql/utils/VectorOps.hpp>
+
 // -----------------------------------------------------------------------------
 // Configuration
 // -----------------------------------------------------------------------------
@@ -15,33 +18,45 @@ struct MonteCarloConfig {
 };
 
 // -----------------------------------------------------------------------------
-// HIGH-PERFORMANCE MONTE CARLO ENGINE
+// MONTE CARLO ENGINE
 // -----------------------------------------------------------------------------
 template <typename Model, typename Stepper, typename Instrument,
           typename RNG = boost::random::xoshiro256pp>
 class MonteCarloEngine {
 public:
+  // Adapts to 'double' or 'std::vector<double>' automatically
+  using ResultType = typename Instrument::ResultType;
+
   MonteCarloEngine(const Model &model, const MonteCarloConfig &cfg)
       : model_(model), cfg_(cfg) {}
 
   // Returns {Price, Standard Error}
-  std::pair<double, double> calculate(double S0, double r, double q,
-                                      const Instrument &instr) const {
+  std::pair<ResultType, ResultType> calculate(double S0, double r, double q,
+                                              const Instrument &instr) const {
 
-    size_t steps = cfg_.time_steps;
-    size_t M = cfg_.num_paths;
-    double T = instr.get_maturity();
-    double dt = T / static_cast<double>(steps);
+    const size_t steps = cfg_.time_steps;
+    const size_t M = cfg_.num_paths;
+    const double T = instr.get_maturity();
+    const double dt = T / static_cast<double>(steps);
+    const size_t n_contracts = instr.size();
 
-    double sum_payoff = 0.0;
-    double sum_sq_payoff = 0.0;
+    // GLOBAL ACCUMULATOR INITIALIZATION
+    ResultType global_sum;
+    ResultType global_sq_sum;
 
-// -------------------------------------------------------
-// PARALLEL REGION
-// -------------------------------------------------------
-#pragma omp parallel reduction(+ : sum_payoff, sum_sq_payoff)
+    if constexpr (std::is_same_v<ResultType, double>) {
+      global_sum = 0.0;
+      global_sq_sum = 0.0;
+    } else {
+      global_sum.assign(n_contracts, 0.0);
+      global_sq_sum.assign(n_contracts, 0.0);
+    }
+
+    // -------------------------------------------------------
+    // PARALLEL REGION
+    // -------------------------------------------------------
+#pragma omp parallel
     {
-      // [FIX HERE]: Pass 'T' (Total Time) as the 5th argument!
       Stepper stepper(model_, dt, r, q, T);
 
       // Thread-Local RNG
@@ -51,31 +66,63 @@ public:
 
       typename Stepper::State state;
 
+      // THREAD-LOCAL BUFFER ALLOCATION
+      ResultType local_sum;
+      ResultType local_sq_sum;
+      ResultType payoff_buffer; // Reusable memory for each path
+
+      if constexpr (std::is_same_v<ResultType, double>) {
+        local_sum = 0.0;
+        local_sq_sum = 0.0;
+        payoff_buffer = 0.0;
+      } else {
+        local_sum.assign(n_contracts, 0.0);
+        local_sq_sum.assign(n_contracts, 0.0);
+        payoff_buffer.resize(n_contracts);
+      }
+
 #pragma omp for schedule(static) nowait
       for (size_t i = 0; i < M; ++i) {
 
-        // A. Reset State
-        // This calls Tracker::init internally!
+        // A. Reset & Evolve Path
         stepper.start_path(state, S0);
-
-        // B. Evolve Path
         stepper.multi_step(state, rng, steps);
 
-        // C. Evaluate Payoff
-        double val = instr.calculate(state);
+        // B. CALCULATE PAYOFF TO BUFFER (Zero Allocation!)
+        instr.calculate_to_buffer(state, payoff_buffer);
 
-        sum_payoff += val;
-        sum_sq_payoff += val * val;
+        // C. ACCUMULATE
+        using namespace myql::utils;
+        local_sum += payoff_buffer;
+        local_sq_sum += payoff_buffer * payoff_buffer;
       }
-    }
 
-    // 5. Aggregation & Statistics
+      // MANUAL REDUCTION
+#pragma omp critical
+      {
+        using namespace myql::utils;
+        global_sum += local_sum;
+        global_sq_sum += local_sq_sum;
+      }
+    } // End Parallel
+
+    // Aggregation & Statistics
     double df = std::exp(-r * T);
-    double mean = sum_payoff / M;
+    using namespace myql::utils;
 
-    // Biased Variance of the ESTIMATOR
-    double variance = (sum_sq_payoff / M) - (mean) * (mean);
-    double stderr = std::sqrt(variance / M);
+    double inv_M = 1.0 / static_cast<double>(M);
+
+    ResultType mean = global_sum * inv_M;
+    ResultType mean_sq = mean * mean;
+    ResultType avg_sq_sum = global_sq_sum * inv_M;
+    ResultType variance = avg_sq_sum - mean_sq;
+
+    ResultType stderr;
+    if constexpr (std::is_same_v<ResultType, double>) {
+      stderr = std::sqrt(variance * inv_M);
+    } else {
+      stderr = element_wise_sqrt(variance * inv_M);
+    }
 
     return {mean * df, stderr * df};
   }

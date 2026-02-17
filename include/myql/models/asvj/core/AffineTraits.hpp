@@ -34,7 +34,7 @@ inline Complex heston_log_characteristic(const HestonParams &p,
   return term_A + term_B;
 }
 
-// ... (Keep the Policy Mapper logic) ...
+// Policy Mapper logic
 template <typename T> struct Map;
 template <> struct Map<NoJumpParams> {
   using Type = CF_Policies::NoJumps;
@@ -56,13 +56,13 @@ struct AffineTraits<SingleFactorModel<JumpParamType>> {
   using Complex = std::complex<double>;
   using JumpPolicy = typename detail::Map<JumpParamType>::Type;
 
-  // Returns the MARTINGALE Log-Characteristic Function (Drift = 0)
+  // Returns the MARTINGALE Log-Characteristic Function
   static Complex characteristic_log_martingale(const Model &m, const Complex &u,
                                                double t) {
     // 1. Heston (Already Martingale-Corrected for diffusion)
     Complex phi_h = detail::heston_log_characteristic(m.heston, u, t);
 
-    // 2. Jump (Now returns the Compensated Exponent directly)
+    // 2. Jump (returns the Compensated Exponent directly)
     // Formula: t * lambda * [ E[e^iuJ] - 1 - iu*k ]
     Complex phi_j = JumpPolicy::compensated_exponent(m.jump, u);
 

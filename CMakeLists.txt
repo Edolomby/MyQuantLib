@@ -62,6 +62,9 @@ endmacro()
 # Existing benchmark
 add_benchmark(BenchFourierMC benchmarks/benchmark_fourier_vs_mc.cpp)
 add_benchmark(TestSmile benchmarks/test_smile_suite.cpp)
+add_benchmark(TimerMCstrip benchmarks/timer_MC_strip_vs_std.cpp)
+add_benchmark(DigitalTest benchmarks/digital_verification.cpp)
+add_benchmark(ExoticConsistency benchmarks/exotic_consistency.cpp)
 
 # ==============================================================================
 # 5. STATUS REPORT

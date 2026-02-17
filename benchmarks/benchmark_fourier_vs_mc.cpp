@@ -37,6 +37,7 @@ struct BenchmarkResults {
   std::vector<double> z_scores;
   std::vector<double> time_fourier;
   std::vector<double> time_mc;
+  std::vector<std::string> status;
 };
 
 BenchmarkResults results;
@@ -51,56 +52,63 @@ void run_single_test(const std::string &model_name, const ModelType &model,
                      const MonteCarloConfig &mc_cfg,
                      const FourierEngine::Config &four_cfg) {
 
-  // A. Fourier Pricing (Reference)
-  double price_fourier = 0.0;
-  double t_four = 0.0;
-  {
-    auto start = std::chrono::high_resolution_clock::now();
-    price_fourier =
-        price_european_fourier(model, S0, K, T, r, q, is_call, four_cfg);
-    auto end = std::chrono::high_resolution_clock::now();
-    t_four = std::chrono::duration<double>(end - start).count() * 1000.0; // ms
-  }
-
-  // B. Monte Carlo Pricing
+  // Variables to hold the results
+  double p_fourier = 0.0;
+  double t_fourier = 0.0;
   std::pair<double, double> res_mc = {0.0, 0.0};
   double t_mc = 0.0;
 
-  auto start = std::chrono::high_resolution_clock::now();
-
-  // We must handle the type dispatch here because OptionType::Call is a
-  // template arg
+  // =========================================================
+  // TYPE DISPATCH: Create the correct Instrument first
+  // =========================================================
   if (is_call) {
-    // 1. Define the specific Instrument Type
+    // Define the specific Instrument Type
     using InstrumentT = EuropeanOption<PayoffVanilla<OptionType::Call>>;
-
-    // 2. Instantiate Instrument
     InstrumentT option(K, T);
 
-    // 3. Configure Engine with the specific Instrument Type
+    // Fourier Pricing
+    auto s1 = std::chrono::high_resolution_clock::now();
+    p_fourier = price_fourier(model, S0, r, q, option, four_cfg);
+    auto e1 = std::chrono::high_resolution_clock::now();
+    t_fourier = std::chrono::duration<double>(e1 - s1).count() * 1000.0; // ms
+
+    // 3. Monte Carlo Pricing
+    auto s2 = std::chrono::high_resolution_clock::now();
     MonteCarloEngine<ModelType, StepperType, InstrumentT, RNG> engine(model,
                                                                       mc_cfg);
-
-    // 4. Calculate
-    // Note: We don't pass K or T here anymore; the instrument has them!
     res_mc = engine.calculate(S0, r, q, option);
+    auto e2 = std::chrono::high_resolution_clock::now();
+    t_mc = std::chrono::duration<double>(e2 - s2).count(); // s
 
   } else {
     // Same logic for Put
     using InstrumentT = EuropeanOption<PayoffVanilla<OptionType::Put>>;
-
     InstrumentT option(K, T);
+
+    // 2. Fourier Pricing (Reference)
+    auto s1 = std::chrono::high_resolution_clock::now();
+    p_fourier = price_fourier(model, S0, r, q, option, four_cfg);
+    auto e1 = std::chrono::high_resolution_clock::now();
+    t_fourier = std::chrono::duration<double>(e1 - s1).count() * 1000.0; // ms
+
+    // 3. Monte Carlo Pricing
+    auto s2 = std::chrono::high_resolution_clock::now();
     MonteCarloEngine<ModelType, StepperType, InstrumentT, RNG> engine(model,
                                                                       mc_cfg);
     res_mc = engine.calculate(S0, r, q, option);
+    auto e2 = std::chrono::high_resolution_clock::now();
+    t_mc = std::chrono::duration<double>(e2 - s2).count(); // s
   }
 
-  auto end = std::chrono::high_resolution_clock::now();
-  t_mc = std::chrono::duration<double>(end - start).count(); // s
-
   // C. Record Results
-  double diff = res_mc.first - price_fourier;
+  double diff = res_mc.first - p_fourier;
   double z = (res_mc.second > 1e-14) ? diff / res_mc.second : 0.0;
+
+  std::string stat_tag = "OK";
+  if (std::abs(z) > 4.0)
+    stat_tag = "[ERROR]";
+  else if (std::abs(z) > 2.0)
+    stat_tag = "[WARN]";
 
   std::stringstream ss;
   ss << "T=" << T << " " << moneyness_label << " "
@@ -108,13 +116,14 @@ void run_single_test(const std::string &model_name, const ModelType &model,
 
   results.scenarios.push_back(model_name);
   results.details.push_back(ss.str());
-  results.fourier_prices.push_back(price_fourier);
+  results.fourier_prices.push_back(p_fourier);
   results.mc_prices.push_back(res_mc.first);
   results.diffs.push_back(diff);
   results.mc_stderrs.push_back(res_mc.second);
   results.z_scores.push_back(z);
-  results.time_fourier.push_back(t_four);
+  results.time_fourier.push_back(t_fourier);
   results.time_mc.push_back(t_mc);
+  results.status.push_back(stat_tag);
 }
 
 // =============================================================================
@@ -160,7 +169,7 @@ int main() {
   // --- CONFIG ---
   MonteCarloConfig mc_cfg;
   mc_cfg.num_paths = 200000;
-  mc_cfg.time_steps = 100;
+  mc_cfg.time_steps = 200;
   mc_cfg.seed = 423;
 
   FourierEngine::Config fourier_cfg;
@@ -224,10 +233,10 @@ int main() {
   // PRINT RESULTS
   std::cout << "\n";
   utils::printVectors({"Model", "Details", "Fourier", "MC Price", "Diff",
-                       "MC Err", "Z-Score", "Four(ms)", "MC(s)"},
+                       "MC Err", "Z-Score", "Status", "Four(ms)", "MC(s)"},
                       results.scenarios, results.details,
                       results.fourier_prices, results.mc_prices, results.diffs,
-                      results.mc_stderrs, results.z_scores,
+                      results.mc_stderrs, results.z_scores, results.status,
                       results.time_fourier, results.time_mc);
 
   return 0;

@@ -177,7 +177,7 @@ public:
         current_logS += jump;
 
         state.logS = current_logS;
-        TrackerPolicy::update_path(state, dt_);
+        TrackerPolicy::update(state, dt_);
       }
     }
 
