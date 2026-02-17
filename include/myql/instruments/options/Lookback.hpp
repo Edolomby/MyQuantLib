@@ -1,7 +1,6 @@
 #pragma once
 #include <myql/instruments/Payoffs.hpp>
 #include <myql/instruments/trackers/PathTrackers.hpp>
-#include <type_traits>
 #include <vector>
 
 // =============================================================================
