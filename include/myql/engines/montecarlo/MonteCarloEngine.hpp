@@ -40,6 +40,11 @@ public:
     const double dt = T / static_cast<double>(steps);
     const size_t n_contracts = instr.size();
 
+    // 1. PRE-COMPUTE SHARED WORKSPACE
+    // Generated exactly once, safely outside the parallel block
+    typename Stepper::VolGlobalWorkspace shared_vol_wksp =
+        Stepper::build_global_workspace(model_, dt);
+
     // GLOBAL ACCUMULATOR INITIALIZATION
     ResultType global_sum;
     ResultType global_sq_sum;
@@ -57,7 +62,7 @@ public:
     // -------------------------------------------------------
 #pragma omp parallel
     {
-      Stepper stepper(model_, dt, r, q, T);
+      Stepper stepper(model_, dt, r, q, T, shared_vol_wksp);
 
       // Thread-Local RNG
       int tid = omp_get_thread_num();

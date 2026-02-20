@@ -168,15 +168,15 @@ int main() {
 
   // --- CONFIG ---
   MonteCarloConfig mc_cfg;
-  mc_cfg.num_paths = 200000;
-  mc_cfg.time_steps = 200;
+  mc_cfg.num_paths = 1000000;
+  mc_cfg.time_steps = 20;
   mc_cfg.seed = 423;
 
   FourierEngine::Config fourier_cfg;
   fourier_cfg.tolerance = 1e-9;
 
   // --- PARAMETERS ---
-  HestonParams h1 = {2.0, 0.04, 0.4, -0.7, 0.04};
+  HestonParams h1 = {2.0, 0.04, 0.4, -0.7, 0.04}; // kappa,theta,sigma,rho,v0
   HestonParams h2 = {3.0, 0.02, 0.2, -0.3, 0.02};
   MertonParams j_merton = {1.0, -0.1, 0.1};
   KouParams j_kou = {3.0, 0.3, 25.0, 15.0};
@@ -187,21 +187,24 @@ int main() {
     // Notice: We still manually select TrackerEuropean for the Stepper here.
     // In a fully automated Engine, the Engine could deduce this, but explicit
     // is fine.
-    using Stepper = ASVJStepper<1, SchemeHighVol, NoJumps, TrackerEuropean>;
+    using Stepper =
+        ASVJStepper<SchemeNCI, NullVolScheme, NoJumps, TrackerEuropean>;
     run_full_suite<HestonModel, Stepper>("Heston", model, mc_cfg, fourier_cfg);
   }
 
   // 2. Bates
   {
     BatesModel model(h1, j_merton);
-    using Stepper = ASVJStepper<1, SchemeHighVol, MertonJump, TrackerEuropean>;
+    using Stepper =
+        ASVJStepper<SchemeNCI, NullVolScheme, MertonJump, TrackerEuropean>;
     run_full_suite<BatesModel, Stepper>("Bates", model, mc_cfg, fourier_cfg);
   }
 
   // 3. Bates-Kou
   {
     BatesKouModel model(h1, j_kou);
-    using Stepper = ASVJStepper<1, SchemeHighVol, KouJump, TrackerEuropean>;
+    using Stepper =
+        ASVJStepper<SchemeNCI, NullVolScheme, KouJump, TrackerEuropean>;
     run_full_suite<BatesKouModel, Stepper>("Bates-Kou", model, mc_cfg,
                                            fourier_cfg);
   }
@@ -209,7 +212,7 @@ int main() {
   // 4. Double Heston
   {
     DoubleHestonModel model(h1, h2);
-    using Stepper = ASVJStepper<2, SchemeHighVol, NoJumps, TrackerEuropean>;
+    using Stepper = ASVJStepper<SchemeNCI, SchemeNV, NoJumps, TrackerEuropean>;
     run_full_suite<DoubleHestonModel, Stepper>("D-Heston", model, mc_cfg,
                                                fourier_cfg);
   }
@@ -217,7 +220,8 @@ int main() {
   // 5. Double Bates
   {
     DoubleBatesModel model(h1, h2, j_merton);
-    using Stepper = ASVJStepper<2, SchemeHighVol, MertonJump, TrackerEuropean>;
+    using Stepper =
+        ASVJStepper<SchemeNCI, SchemeNV, MertonJump, TrackerEuropean>;
     run_full_suite<DoubleBatesModel, Stepper>("D-Bates", model, mc_cfg,
                                               fourier_cfg);
   }
@@ -225,7 +229,7 @@ int main() {
   // 6. Double Kou
   {
     DoubleFactorModel<KouParams> model(h1, h2, j_kou);
-    using Stepper = ASVJStepper<2, SchemeHighVol, KouJump, TrackerEuropean>;
+    using Stepper = ASVJStepper<SchemeNCI, SchemeNV, KouJump, TrackerEuropean>;
     run_full_suite<DoubleFactorModel<KouParams>, Stepper>("D-Bates-Kou", model,
                                                           mc_cfg, fourier_cfg);
   }

@@ -89,23 +89,27 @@ int main() {
   cfg.num_paths = 200000; // High paths to get stable timings
   cfg.time_steps = 50;
 
-  HestonParams h1 = {2.5, 0.06, 0.4, -0.7, 0.05};
+  // kappa,theta,sigma,rho,v0;
+  HestonParams h1 = {2.5, 0.06, 0.4, -0.7, 0.05}; // kappa,theta,sigma,rho,v0
   MertonParams m_jmp = {1.2, -0.12, 0.15};
 
   // Run Benchmarks
   {
     HestonModel m(h1);
-    using Stepper = ASVJStepper<1, SchemeHighVol, NoJumps, TrackerEuropean>;
+    using Stepper =
+        ASVJStepper<SchemeExact, NullVolScheme, NoJumps, TrackerEuropean>;
     run_benchmark<HestonModel, Stepper>("Heston", m, cfg);
   }
   {
     BatesModel m(h1, m_jmp);
-    using Stepper = ASVJStepper<1, SchemeHighVol, MertonJump, TrackerEuropean>;
+    using Stepper =
+        ASVJStepper<SchemeNV, NullVolScheme, MertonJump, TrackerEuropean>;
     run_benchmark<BatesModel, Stepper>("Bates", m, cfg);
   }
   {
     DoubleBatesModel m(h1, h1, m_jmp);
-    using Stepper = ASVJStepper<2, SchemeHighVol, MertonJump, TrackerEuropean>;
+    using Stepper =
+        ASVJStepper<SchemeExact, SchemeExact, MertonJump, TrackerEuropean>;
     run_benchmark<DoubleBatesModel, Stepper>("DoubleBates", m, cfg);
   }
 

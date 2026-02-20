@@ -45,8 +45,8 @@ void run_smile_test(const std::string &name, const ModelType &model,
                     const FourierEngine::Config &f_cfg) {
 
   double S0 = 100.0;
-  double r = 0.03;
-  double q = 0.00;
+  double r = 0.10;
+  double q = 0.07;
 
   std::vector<double> maturities = {0.25, 1.0, 2.0};
   std::vector<double> strike_pcts = {0.8, 0.9, 1.0, 1.1, 1.2};
@@ -103,7 +103,7 @@ int main() {
                "=====\n";
 
   MonteCarloConfig mc_cfg;
-  mc_cfg.num_paths = 250000;
+  mc_cfg.num_paths = 4000000; // 4M paths
   mc_cfg.time_steps = 100;
   mc_cfg.seed = 42;
 
@@ -118,32 +118,38 @@ int main() {
   // --- MODEL EXECUTION ---
   {
     HestonModel m(h1);
-    using Stepper = ASVJStepper<1, SchemeHighVol, NoJumps, TrackerEuropean>;
+    using Stepper =
+        ASVJStepper<SchemeExact, NullVolScheme, NoJumps, TrackerEuropean>;
     run_smile_test<HestonModel, Stepper>("Heston", m, mc_cfg, f_cfg);
   }
   {
     BatesModel m(h1, m_jmp);
-    using Stepper = ASVJStepper<1, SchemeHighVol, MertonJump, TrackerEuropean>;
+    using Stepper =
+        ASVJStepper<SchemeExact, NullVolScheme, MertonJump, TrackerEuropean>;
     run_smile_test<BatesModel, Stepper>("Bates", m, mc_cfg, f_cfg);
   }
   {
     BatesKouModel m(h1, k_jmp);
-    using Stepper = ASVJStepper<1, SchemeHighVol, KouJump, TrackerEuropean>;
+    using Stepper =
+        ASVJStepper<SchemeExact, NullVolScheme, KouJump, TrackerEuropean>;
     run_smile_test<BatesKouModel, Stepper>("Bates-Kou", m, mc_cfg, f_cfg);
   }
   {
     DoubleHestonModel m(h1, h2);
-    using Stepper = ASVJStepper<2, SchemeHighVol, NoJumps, TrackerEuropean>;
+    using Stepper =
+        ASVJStepper<SchemeExact, SchemeNV, NoJumps, TrackerEuropean>;
     run_smile_test<DoubleHestonModel, Stepper>("D-Heston", m, mc_cfg, f_cfg);
   }
   {
     DoubleBatesModel m(h1, h2, m_jmp);
-    using Stepper = ASVJStepper<2, SchemeHighVol, MertonJump, TrackerEuropean>;
+    using Stepper =
+        ASVJStepper<SchemeExact, SchemeNV, MertonJump, TrackerEuropean>;
     run_smile_test<DoubleBatesModel, Stepper>("D-Bates", m, mc_cfg, f_cfg);
   }
   {
     DoubleBatesKouModel m(h1, h2, k_jmp);
-    using Stepper = ASVJStepper<2, SchemeHighVol, KouJump, TrackerEuropean>;
+    using Stepper =
+        ASVJStepper<SchemeExact, SchemeNV, KouJump, TrackerEuropean>;
     run_smile_test<DoubleBatesKouModel, Stepper>("D-Bates-Kou", m, mc_cfg,
                                                  f_cfg);
   }

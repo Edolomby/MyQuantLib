@@ -62,7 +62,8 @@ double analytic_lookback_fixed_call(double S0, double K, double T, double r,
 
   if (std::abs(mu) < 1e-9) {
     // Zero drift limit
-    double factor = (S0 * std::exp(-r * T) * vol_sq) / (2.0 * mu);
+    [[maybe_unused]] double factor =
+        (S0 * std::exp(-r * T) * vol_sq) / (2.0 * mu);
     // Note: Real implementation needs L'Hopital's rule here,
     // but for r=0.05, q=0.02, mu is non-zero.
   } else {
@@ -162,9 +163,10 @@ int main() {
         AsianOption<TrackerArithAsian, PayoffVanilla<OptionType::Call>, true>;
     AsianT asian_instr(K, T);
 
-    MonteCarloEngine<HestonModel,
-                     ASVJStepper<1, SchemeHighVol, NoJumps, TrackerArithAsian>,
-                     AsianT>
+    MonteCarloEngine<
+        HestonModel,
+        ASVJStepper<SchemeExact, NullVolScheme, NoJumps, TrackerArithAsian>,
+        AsianT>
         mc_engine(model, mc_cfg);
     auto [mc_res, mc_err] = mc_engine.calculate(S0, r, q, asian_instr);
 
@@ -184,9 +186,9 @@ int main() {
         AsianOption<TrackerGeoAsian, PayoffVanilla<OptionType::Call>, true>;
     GeoT asian_instr(K, T);
 
-    MonteCarloEngine<HestonModel,
-                     ASVJStepper<1, SchemeHighVol, NoJumps, TrackerGeoAsian>,
-                     GeoT>
+    MonteCarloEngine<
+        HestonModel,
+        ASVJStepper<SchemeExact, NullVolScheme, NoJumps, TrackerGeoAsian>, GeoT>
         mc_engine(model, mc_cfg);
     auto [mc_res, mc_err] = mc_engine.calculate(S0, r, q, asian_instr);
 
@@ -205,9 +207,10 @@ int main() {
     LookbackT lb_instr(K, T);
 
     // we use the low vol
-    MonteCarloEngine<HestonModel,
-                     ASVJStepper<1, SchemeLowVol, NoJumps, TrackerLookback>,
-                     LookbackT>
+    MonteCarloEngine<
+        HestonModel,
+        ASVJStepper<SchemeNV, NullVolScheme, NoJumps, TrackerLookback>,
+        LookbackT>
         lb_engine(model, mc_cfg);
     auto [mc_res, mc_err] = lb_engine.calculate(S0, r, q, lb_instr);
 

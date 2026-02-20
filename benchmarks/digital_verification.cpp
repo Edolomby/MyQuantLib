@@ -147,19 +147,21 @@ int main() {
     HestonModel m(h1);
     run_all_payoffs(
         "Heston", m,
-        type_tag<ASVJStepper<1, SchemeHighVol, NoJumps, TrackerEuropean>>{});
+        type_tag<
+            ASVJStepper<SchemeNCI, NullVolScheme, NoJumps, TrackerEuropean>>{});
   }
   {
     BatesModel m(h1, m_jmp);
-    run_all_payoffs(
-        "Bates", m,
-        type_tag<ASVJStepper<1, SchemeHighVol, MertonJump, TrackerEuropean>>{});
+    run_all_payoffs("Bates", m,
+                    type_tag<ASVJStepper<SchemeNCI, NullVolScheme, MertonJump,
+                                         TrackerEuropean>>{});
   }
   {
     BatesKouModel m(h1, k_jmp);
     run_all_payoffs(
         "Bates-Kou", m,
-        type_tag<ASVJStepper<1, SchemeHighVol, KouJump, TrackerEuropean>>{});
+        type_tag<
+            ASVJStepper<SchemeNCI, NullVolScheme, KouJump, TrackerEuropean>>{});
   }
 
   // 4. EXECUTION: Double-Factor Models
@@ -167,19 +169,20 @@ int main() {
     DoubleHestonModel m(h1, h2);
     run_all_payoffs(
         "D-Heston", m,
-        type_tag<ASVJStepper<2, SchemeHighVol, NoJumps, TrackerEuropean>>{});
+        type_tag<ASVJStepper<SchemeNCI, SchemeNV, NoJumps, TrackerEuropean>>{});
   }
   {
     DoubleBatesModel m(h1, h2, m_jmp);
     run_all_payoffs(
         "D-Bates", m,
-        type_tag<ASVJStepper<2, SchemeHighVol, MertonJump, TrackerEuropean>>{});
+        type_tag<
+            ASVJStepper<SchemeNCI, SchemeNV, MertonJump, TrackerEuropean>>{});
   }
   {
     DoubleBatesKouModel m(h1, h2, k_jmp);
     run_all_payoffs(
         "D-Bates-Kou", m,
-        type_tag<ASVJStepper<2, SchemeHighVol, KouJump, TrackerEuropean>>{});
+        type_tag<ASVJStepper<SchemeNCI, SchemeNV, KouJump, TrackerEuropean>>{});
   }
 
   // 5. FINAL PRINTING
