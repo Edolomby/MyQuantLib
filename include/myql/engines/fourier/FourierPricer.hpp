@@ -4,6 +4,7 @@
 // #include <type_traits>
 
 #include <myql/engines/fourier/FourierEngine.hpp>
+#include <myql/engines/fourier/FourierTypes.hpp>
 #include <myql/engines/fourier/kernels/GilPeleazKernel.hpp>
 #include <myql/instruments/Payoffs.hpp>
 #include <myql/instruments/options/European.hpp>
@@ -34,92 +35,130 @@ template <typename P> struct is_strip<EuropeanStrip<P>> : std::true_type {};
 // -----------------------------------------------------------------------------
 // GENERIC FOURIER PRICER
 // -----------------------------------------------------------------------------
-template <typename Model, typename Instrument,
+template <GreekMode Mode = GreekMode::None, typename Model, typename Instrument,
           typename Traits = AffineTraits<Model>>
-typename Instrument::ResultType price_fourier(
+auto price_fourier(
     const Model &model, double S0, double r, double q, const Instrument &instr,
     const FourierEngine::Config &engine_cfg = FourierEngine::Config()) {
 
   // ===========================================================================
-  // STRIP HANDLING (Vector of Options)
+  // STRIP HANDLING
   // ===========================================================================
   if constexpr (is_strip<Instrument>::value) {
-    typename Instrument::ResultType prices;
-    prices.reserve(instr.get_strikes().size());
+    std::vector<FourierResult<Mode>> results;
+    results.reserve(instr.get_strikes().size());
 
-    // Loop over K (Direct Integration for now, Carr-Madan FFT later)
     for (double K : instr.get_strikes()) {
-      // 1. Create a temporary Single Option with the same Payoff Type
       using SingleOptType = EuropeanOption<typename Instrument::PayoffType>;
       SingleOptType single_opt(K, instr.get_maturity());
-
-      // 2. Recursive Call: This reuses the logic below (Vanilla/Digital
-      // dispatch)
-      prices.push_back(price_fourier<Model, SingleOptType, Traits>(
+      results.push_back(price_fourier<Mode, Model, SingleOptType, Traits>(
           model, S0, r, q, single_opt, engine_cfg));
     }
-    return prices;
+    return results;
   }
 
   // ===========================================================================
-  // SINGLE OPTION LOGIC STARTS HERE
+  // SINGLE OPTION LOGIC
   // ===========================================================================
   else {
-    // 1. EXTRACT DATA
-    double K = instr.get_strike(); // Compile error if Strip reaches here (Safe)
+    double K = instr.get_strike();
     double T = instr.get_maturity();
     double K_norm = K / S0;
 
     double df_r = std::exp(-r * T);
     double df_q = std::exp(-q * T);
     constexpr double INV_PI = 0.31830988618379067154;
-    FourierEngine engine(engine_cfg);
 
-    // 2. COMPILE-TIME DISPATCH
+    FourierEngine engine(engine_cfg);
+    FourierResult<Mode> result;
+
     using PayoffT = typename Instrument::PayoffType;
     constexpr OptionType OT = PayoffT::Type;
+    double sign = (OT == OptionType::Call) ? 1.0 : -1.0;
 
     // --- CASE A: VANILLA ---
     if constexpr (is_vanilla<PayoffT>::value) {
-      GilPelaezKernel<Model, Traits> k1(model, T, r, q, K_norm, false);
-      GilPelaezKernel<Model, Traits> k2(model, T, r, q, K_norm, true);
+      GilPelaezKernel<KernelTarget::Price, Model, Traits> k1(model, T, r, q,
+                                                             K_norm, false);
+      GilPelaezKernel<KernelTarget::Price, Model, Traits> k2(model, T, r, q,
+                                                             K_norm, true);
 
       double P1 = 0.5 + engine.calculate_integral(k1, T) * INV_PI;
       double P2 = 0.5 + engine.calculate_integral(k2, T) * INV_PI;
 
-      double price = S0 * df_q * P1 - K * df_r * P2;
+      result.price =
+          (OT == OptionType::Call)
+              ? std::max(0.0, S0 * df_q * P1 - K * df_r * P2)
+              : std::max(0.0, K * df_r * (1.0 - P2) - S0 * df_q * (1.0 - P1));
 
-      if constexpr (OT == OptionType::Call)
-        return std::max(0.0, price);
-      else
-        return std::max(0.0, price - S0 * df_q + K * df_r);
+      if constexpr (Mode == GreekMode::Essential || Mode == GreekMode::Full) {
+        // Delta is purely derived from P1
+        result.delta =
+            (OT == OptionType::Call) ? (df_q * P1) : (df_q * (P1 - 1.0));
+
+        // Gamma = e^{-qT} * I_x(P1) / S0
+        GilPelaezKernel<KernelTarget::Dx, Model, Traits> k_dP1(model, T, r, q,
+                                                               K_norm, false);
+        double I_x = engine.calculate_integral(k_dP1, T) * INV_PI;
+        result.gamma = (df_q * I_x) / S0;
+      }
+      return result;
     }
 
     // --- CASE B: CASH-OR-NOTHING ---
     else if constexpr (is_cash_or_nothing<PayoffT>::value) {
-      GilPelaezKernel<Model, Traits> k2(model, T, r, q, K_norm, true);
+      GilPelaezKernel<KernelTarget::Price, Model, Traits> k2(model, T, r, q,
+                                                             K_norm, true);
       double P2 = 0.5 + engine.calculate_integral(k2, T) * INV_PI;
 
-      if constexpr (OT == OptionType::Call)
-        return df_r * P2;
-      else
-        return df_r * (1.0 - P2);
+      result.price = df_r * ((OT == OptionType::Call) ? P2 : (1.0 - P2));
+
+      if constexpr (Mode == GreekMode::Essential || Mode == GreekMode::Full) {
+        GilPelaezKernel<KernelTarget::Dx, Model, Traits> k_dP2(model, T, r, q,
+                                                               K_norm, true);
+        GilPelaezKernel<KernelTarget::Dxx, Model, Traits> k_d2P2(model, T, r, q,
+                                                                 K_norm, true);
+
+        double I_x = engine.calculate_integral(k_dP2, T) * INV_PI;
+        double I_xx = engine.calculate_integral(k_d2P2, T) * INV_PI;
+
+        result.delta = sign * df_r * I_x / S0;
+        result.gamma = sign * df_r * (I_xx - I_x) / (S0 * S0);
+      }
+      return result;
     }
 
     // --- CASE C: ASSET-OR-NOTHING ---
     else if constexpr (is_asset_or_nothing<PayoffT>::value) {
-      GilPelaezKernel<Model, Traits> k1(model, T, r, q, K_norm, false);
+      GilPelaezKernel<KernelTarget::Price, Model, Traits> k1(model, T, r, q,
+                                                             K_norm, false);
       double P1 = 0.5 + engine.calculate_integral(k1, T) * INV_PI;
 
-      if constexpr (OT == OptionType::Call)
-        return S0 * df_q * P1;
-      else
-        return S0 * df_q * (1.0 - P1);
+      result.price = S0 * df_q * ((OT == OptionType::Call) ? P1 : (1.0 - P1));
+
+      if constexpr (Mode == GreekMode::Essential || Mode == GreekMode::Full) {
+        GilPelaezKernel<KernelTarget::Dx, Model, Traits> k_dP1(model, T, r, q,
+                                                               K_norm, false);
+        GilPelaezKernel<KernelTarget::Dxx, Model, Traits> k_d2P1(model, T, r, q,
+                                                                 K_norm, false);
+
+        double I_x = engine.calculate_integral(k_dP1, T) * INV_PI;
+        double I_xx = engine.calculate_integral(k_d2P1, T) * INV_PI;
+
+        double base_delta = (OT == OptionType::Call) ? P1 : (P1 - 1.0);
+
+        result.delta = df_q * (base_delta + sign * I_x);
+        result.gamma = sign * df_q * (I_x + I_xx) / S0;
+      }
+      return result;
     }
 
     else {
-      static_assert(is_vanilla<PayoffT>::value, "Unsupported Payoff Type");
-      return 0.0;
+      static_assert(is_vanilla<PayoffT>::value ||
+                        is_cash_or_nothing<PayoffT>::value ||
+                        is_asset_or_nothing<PayoffT>::value,
+                    "Unsupported Payoff Type");
+      return result;
     }
   }
 }

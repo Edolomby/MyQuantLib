@@ -86,8 +86,8 @@ int main() {
       << "==================================================================\n";
 
   MonteCarloConfig cfg;
-  cfg.num_paths = 200000; // High paths to get stable timings
-  cfg.time_steps = 50;
+  cfg.num_paths = 1000000; // High paths to get stable timings
+  cfg.time_steps = 10;
 
   // kappa,theta,sigma,rho,v0;
   HestonParams h1 = {2.5, 0.06, 0.4, -0.7, 0.05}; // kappa,theta,sigma,rho,v0

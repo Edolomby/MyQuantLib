@@ -116,7 +116,8 @@ public:
     }
   }
 
-  void start_path(State &state, double S0) const {
+  void start_path(State &state, const typename TrackerPolicy::Config &cfg,
+                  double S0) const {
     // Reset Physics (The Stepper's job)
     state.logS = std::log(S0);
     // Use the NumCirs template parameter to decide how much to initialize
@@ -125,14 +126,15 @@ public:
     if constexpr (NumCirs >= 2)
       state.V[1] = std::get<1>(diffusion_data_).v0;
 
-    TrackerPolicy::init(state, state.logS, dt_);
+    TrackerPolicy::init(state, cfg, state.logS, dt_);
   }
 
   // =========================================================================
   // MULTI-STEP ENGINE
   // =========================================================================
   template <typename RNG>
-  void multi_step(State &state, RNG &rng, unsigned n_steps) {
+  void multi_step(State &state, const typename TrackerPolicy::Config &cfg,
+                  RNG &rng, unsigned n_steps) {
     boost::random::uniform_real_distribution<double> dist_uni(0.0, 1.0);
     std::array<double, NumCirs> v_curr = state.V;
     double current_logS = state.logS;
@@ -155,7 +157,7 @@ public:
       current_logS += jump;
 
       state.logS = current_logS;
-      TrackerPolicy::finalize(state, dt_, total_time); // eu= just exp the logS
+      TrackerPolicy::finalize(state, cfg, dt_, total_time); // eu=exp the logS
 
       return; // EXIT EARLY
     }
@@ -211,7 +213,7 @@ public:
         current_logS += jump;
 
         state.logS = current_logS;
-        TrackerPolicy::update(state, dt_);
+        TrackerPolicy::update(state, cfg, dt_);
       }
     }
 
@@ -226,7 +228,7 @@ public:
     state.V = v_curr;
 
     // to renormalize and exponentiate
-    TrackerPolicy::finalize(state, dt_, total_time);
+    TrackerPolicy::finalize(state, cfg, dt_, total_time);
   }
 
 private:

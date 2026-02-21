@@ -18,6 +18,8 @@ public:
 
   EuropeanOption(double K, double T) : strike_(K), T_(T) {}
 
+  typename Tracker::Config get_tracker_config() const { return {}; }
+
   template <typename State> double calculate(const State &state) const {
     // TrackerEuropean::finalize has already converted logS -> Price
     return payoff_func_(state.logS, strike_);
@@ -49,6 +51,8 @@ public:
 
   EuropeanStrip(const std::vector<double> &strikes, double T)
       : strikes_(strikes), T_(T) {}
+
+  typename Tracker::Config get_tracker_config() const { return {}; }
 
   template <typename State>
   std::vector<double> calculate(const State &state) const {

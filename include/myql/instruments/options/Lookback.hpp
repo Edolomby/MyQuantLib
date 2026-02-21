@@ -18,6 +18,8 @@ public:
 
   LookbackOption(double K, double T) : strike_(K), T_(T) {}
 
+  typename Tracker::Config get_tracker_config() const { return {}; }
+
   template <typename State> double calculate(const State &state) const {
     double res;
     calculate_to_buffer(state, res);
@@ -57,6 +59,8 @@ public:
 
   LookbackFixedStrip(const std::vector<double> &strikes, double T)
       : strikes_(strikes), T_(T) {}
+
+  typename Tracker::Config get_tracker_config() const { return {}; }
 
   template <typename State>
   void calculate_to_buffer(const State &state,

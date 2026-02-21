@@ -1,19 +1,20 @@
 #pragma once
 #include <cmath>
 #include <complex>
+#include <myql/engines/fourier/FourierTypes.hpp>
 #include <myql/models/asvj/core/AffineTraits.hpp>
 
 // =============================================================================
 // EUROPEAN OPTION STRATEGY (Generic)
 // Implements the Gil-Pelaez Integrand for P1 and P2 probabilities.
-// It accepts ANY 'Traits' class as a template parameter
+// use general KernelTarget enum to select kernel (enabling greeks)
 // =============================================================================
 
-template <typename Model, typename Traits> class GilPelaezKernel {
+template <KernelTarget Target, typename Model, typename Traits>
+class GilPelaezKernel {
 public:
   using Complex = std::complex<double>;
 
-  // Constructor
   GilPelaezKernel(const Model &model, double T, double r, double q,
                   double K_norm, bool is_P2)
       : model_(model), T_(T), logK_(std::log(K_norm)), is_P2_(is_P2) {
@@ -21,38 +22,42 @@ public:
   }
 
   // -------------------------------------------------------------------------
-  // The Integrand: Re[ e^{-i*u*k} * Phi(u_shifted) / (i*u) ]
+  // The Integrand: Re[ exp(total_exponent) * W(u) ]
   // -------------------------------------------------------------------------
-  double operator()(double u_real) const {
-    // Limit at u=0 is handled by the integration rules!
-    // Rightpoint rule near 0, so 0 is never called!
-
+  inline double operator()(double u_real) const {
     Complex u(u_real, 0.0);
     const Complex I(0.0, 1.0);
 
-    // Shift Logic (The "Measure Change" specific to Gil-Pelaez)
-    // P1 uses (u - i), P2 uses u
+    // 1. Measure Shift: P1 uses (u - i), P2 uses u
     Complex u_shifted = is_P2_ ? u : (u - I);
 
-    // Calculate the log CF (Heston + Compensated Jumps)
+    // 2. Characteristic Function
     Complex psi_martingale =
         Traits::characteristic_log_martingale(model_, u_shifted, T_);
 
-    // Add Risk-Free Rate
-    // exp( i*u * (r-q)T )
-    Complex total_exponent = (I * u * rate_drift_) + psi_martingale;
+    // 3. Base Exponent: i*u*(r-q)T + psi(u) - i*u*ln(K/S0)
+    Complex final_exponent =
+        (I * u * rate_drift_) + psi_martingale - (I * u * logK_);
+    Complex base_term = std::exp(final_exponent);
 
-    // 3. Gil-Pelaez Kernel
-    // exp( total - i*u*k ) / (i*u)
-    Complex final_exponent = total_exponent - (I * u * logK_);
-    return std::real(std::exp(final_exponent) / (I * u));
+    // 4. Compile-Time Dispatch for W(u)
+    if constexpr (Target == KernelTarget::Price) {
+      return std::real(base_term / (I * u));
+    } else if constexpr (Target == KernelTarget::Dx) {
+      return std::real(base_term);
+    } else if constexpr (Target == KernelTarget::Dxx) {
+      return std::real(base_term * (I * u));
+    } else {
+      static_assert(Target == KernelTarget::Price ||
+                        Target == KernelTarget::Dx ||
+                        Target == KernelTarget::Dxx,
+                    "Full Greeks (Vega, Theta, Rho) are planned but not yet "
+                    "implemented.");
+      return 0.0;
+    }
   }
 
-  // -------------------------------------------------------------------------
-  // Magnitude (For Upper Bound Search)
-  // -------------------------------------------------------------------------
-  // Used by the engine to decide where to cut the integral (0 to Inf).
-  double magnitude_sq(double u_real) const {
+  inline double magnitude_sq(double u_real) const {
     double val = this->operator()(u_real);
     return val * val;
   }

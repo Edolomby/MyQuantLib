@@ -24,23 +24,22 @@ public:
   template <typename Integrand>
   double calculate_integral(const Integrand &func, double residual_T) const {
 
-    // 1. Handle Singularity at 0 (Head)
+    // Handle Singularity at 0 (Head)
     constexpr double LOW_BOUND = 1e-8;
     double total_integral = LOW_BOUND * func(LOW_BOUND);
 
-    // 2. Find Upper Bound
+    // Find Upper Bound
     double right_limit = find_upper_bound(func, residual_T);
     double interval_width = right_limit - LOW_BOUND;
 
-    // 3. SMART GEOMETRIC GRID
+    // SMART GEOMETRIC GRID
     // A. Determine Target N (Load Balancing)
     // 4 tasks per thread ensures stragglers don't block the queue.
     int num_threads = omp_get_max_threads();
     int N = std::max(8, num_threads * 4);
 
     // B. Geometric Multiplier
-    // 1.10x growth is smooth enough for the peak, fast enough for the tail.
-    const double multiplier = 1.08;
+    const double multiplier = 1.08; // seems a good choice
 
     // C. Calculate Start Step (Exact Formula)
     // a = L * (r - 1) / (r^N - 1)
@@ -74,20 +73,13 @@ public:
       chunks.push_back({current_u, right_limit});
     }
 
-    // 4. Parallel Integration
-    // Linear tolerance scaling
+    // Parallel Integration - linear tolerance scaling
     double chunk_tol = (chunks.empty())
                            ? cfg_.tolerance
                            : cfg_.tolerance / (double)chunks.size();
 
 #pragma omp parallel for reduction(+ : total_integral) schedule(dynamic, 1)
     for (size_t i = 0; i < chunks.size(); ++i) {
-      // Your adaptive_simpson from Integration.hpp
-      /* total_integral += numerics::adaptive_simpson(
-          [&](double x) { return func(x); }, // Lambda wrapper if needed
-          chunks[i].first, chunks[i].second, chunk_tol,
-          25 // Max depth
-      ); */
       total_integral += numerics::adaptive_simpson(
           func, chunks[i].first, chunks[i].second, chunk_tol, 25);
     }

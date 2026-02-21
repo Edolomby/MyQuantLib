@@ -64,8 +64,7 @@ void run_smile_test(const std::string &name, const ModelType &model,
 
     // 3. VECTORIZED FOURIER PRICING
     // Our updated Fourier pricer handles the strip by looping internally.
-    std::vector<double> p_fourier =
-        price_fourier(model, S0, r, q, smile_strip, f_cfg);
+    auto fourier_results = price_fourier(model, S0, r, q, smile_strip, f_cfg);
 
     // 4. VECTORIZED MONTE CARLO PRICING
     // The engine now uses the Buffered Pattern: 1 path = N prices.
@@ -74,7 +73,7 @@ void run_smile_test(const std::string &name, const ModelType &model,
 
     // 5. STORE RESULTS (Flatten the vectors for the TablePrinter)
     for (size_t i = 0; i < strikes.size(); ++i) {
-      double diff = mc_prices[i] - p_fourier[i];
+      double diff = mc_prices[i] - fourier_results[i].price;
       double z = (mc_errors[i] > 1e-12) ? diff / mc_errors[i] : 0.0;
 
       std::string stat_tag = "OK";
@@ -86,7 +85,7 @@ void run_smile_test(const std::string &name, const ModelType &model,
       global_storage.model.push_back(name);
       global_storage.T.push_back(T);
       global_storage.K.push_back(strikes[i]);
-      global_storage.fourier.push_back(p_fourier[i]);
+      global_storage.fourier.push_back(fourier_results[i].price);
       global_storage.mc.push_back(mc_prices[i]);
       global_storage.stderr.push_back(mc_errors[i]);
       global_storage.z_score.push_back(z);

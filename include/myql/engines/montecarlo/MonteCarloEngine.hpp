@@ -40,10 +40,13 @@ public:
     const double dt = T / static_cast<double>(steps);
     const size_t n_contracts = instr.size();
 
-    // 1. PRE-COMPUTE SHARED WORKSPACE
+    // PRE-COMPUTE SHARED WORKSPACE
     // Generated exactly once, safely outside the parallel block
     typename Stepper::VolGlobalWorkspace shared_vol_wksp =
         Stepper::build_global_workspace(model_, dt);
+
+    // FETCH TRACKER CONFIGURATION
+    const auto tracker_cfg = instr.get_tracker_config();
 
     // GLOBAL ACCUMULATOR INITIALIZATION
     ResultType global_sum;
@@ -57,9 +60,7 @@ public:
       global_sq_sum.assign(n_contracts, 0.0);
     }
 
-    // -------------------------------------------------------
     // PARALLEL REGION
-    // -------------------------------------------------------
 #pragma omp parallel
     {
       Stepper stepper(model_, dt, r, q, T, shared_vol_wksp);
@@ -89,14 +90,14 @@ public:
 #pragma omp for schedule(static) nowait
       for (size_t i = 0; i < M; ++i) {
 
-        // A. Reset & Evolve Path
-        stepper.start_path(state, S0);
-        stepper.multi_step(state, rng, steps);
+        // Reset & Evolve Path
+        stepper.start_path(state, tracker_cfg, S0);
+        stepper.multi_step(state, tracker_cfg, rng, steps);
 
-        // B. CALCULATE PAYOFF TO BUFFER (Zero Allocation!)
+        // CALCULATE PAYOFF TO BUFFER (Zero Allocation!)
         instr.calculate_to_buffer(state, payoff_buffer);
 
-        // C. ACCUMULATE
+        // ACCUMULATE
         using namespace myql::utils;
         local_sum += payoff_buffer;
         local_sq_sum += payoff_buffer * payoff_buffer;

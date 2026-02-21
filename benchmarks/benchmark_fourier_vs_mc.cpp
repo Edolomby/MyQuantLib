@@ -68,7 +68,7 @@ void run_single_test(const std::string &model_name, const ModelType &model,
 
     // Fourier Pricing
     auto s1 = std::chrono::high_resolution_clock::now();
-    p_fourier = price_fourier(model, S0, r, q, option, four_cfg);
+    p_fourier = price_fourier(model, S0, r, q, option, four_cfg).price;
     auto e1 = std::chrono::high_resolution_clock::now();
     t_fourier = std::chrono::duration<double>(e1 - s1).count() * 1000.0; // ms
 
@@ -87,7 +87,7 @@ void run_single_test(const std::string &model_name, const ModelType &model,
 
     // 2. Fourier Pricing (Reference)
     auto s1 = std::chrono::high_resolution_clock::now();
-    p_fourier = price_fourier(model, S0, r, q, option, four_cfg);
+    p_fourier = price_fourier(model, S0, r, q, option, four_cfg).price;
     auto e1 = std::chrono::high_resolution_clock::now();
     t_fourier = std::chrono::duration<double>(e1 - s1).count() * 1000.0; // ms
 

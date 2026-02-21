@@ -16,6 +16,8 @@ public:
 
   AsianOption(double K, double T) : strike_(K), T_(T) {}
 
+  typename Tracker::Config get_tracker_config() const { return {}; }
+
   template <typename State>
   void calculate_to_buffer(const State &state, double &buffer) const {
     double average_price;
@@ -48,6 +50,8 @@ public:
 
   AsianFixedStrip(const std::vector<double> &strikes, double T)
       : strikes_(strikes), T_(T) {}
+
+  typename Tracker::Config get_tracker_config() const { return {}; }
 
   template <typename State>
   void calculate_to_buffer(const State &state,
