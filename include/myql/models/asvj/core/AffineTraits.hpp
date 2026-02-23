@@ -48,8 +48,30 @@ template <> struct Map<KouParams> {
 } // namespace detail
 
 // =============================================================================
-// TRAIT SPECIALIZATION: Single Factor
+// TRAIT SPECIALIZATION: Zero Factor (Black-Scholes + Jumps)
 // =============================================================================
+template <typename JumpParamType>
+struct AffineTraits<ZeroFactorModel<JumpParamType>> {
+  using Model = ZeroFactorModel<JumpParamType>;
+  using Complex = std::complex<double>;
+  using JumpPolicy = typename detail::Map<JumpParamType>::Type;
+
+  static Complex characteristic_log_martingale(const Model &m, const Complex &u,
+                                               double t) {
+    // 1. Black-Scholes Diffusion (Martingale: -0.5*vol^2*t + vol*W_t)
+    // Characteristic Exponent: -0.5 * vol^2 * t * (i*u + u^2)
+    double var_t = m.vol * m.vol * t;
+    Complex phi_bs = -0.5 * var_t * (Complex(0.0, 1.0) * u + u * u);
+
+    // 2. Jump (Compensated Exponent)
+    Complex phi_j = JumpPolicy::compensated_exponent(m.jump, u);
+
+    return phi_bs + (phi_j * t);
+  }
+};
+
+// =============================================================================
+// TRAIT SPECIALIZATION: Single Factor
 template <typename JumpParamType>
 struct AffineTraits<SingleFactorModel<JumpParamType>> {
   using Model = SingleFactorModel<JumpParamType>;

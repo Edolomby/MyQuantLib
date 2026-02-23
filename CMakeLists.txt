@@ -69,6 +69,7 @@ add_benchmark(SplineTest benchmarks/spline_test.cpp)
 add_benchmark(CirTest benchmarks/cir_test.cpp)
 add_benchmark(BarrierTest benchmarks/barrier_test.cpp)
 add_benchmark(EssentialGreekTest benchmarks/EssentialGreekTest.cpp)
+add_benchmark(RuntimeDispatchDemo benchmarks/runtime_dispatch_demo.cpp)
 
 # ==============================================================================
 # 5. STATUS REPORT

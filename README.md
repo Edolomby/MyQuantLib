@@ -11,7 +11,8 @@
   - *Analytical Greeks* via Fourier pricing (Delta, Gamma).
   - *Pathwise Finite Differences* for Monte Carlo (Delta, Gamma).
   - *(Full Greek mode including Vega, Theta, and Rho is planned for a future release).*
-- **Vectorized Evaluation**: First-class support for pricing "strips" of options across multiple strikes/maturities simultaneously (Struct-of-Arrays pattern) for maximum CPU throughput.
+- **Runtime Dispatch Layer**: Includes a `std::variant`-based boundary layer allowing model and instrument selection purely from runtime strings (e.g. JSON/CSV parsing) while retaining the zero-overhead engine core.
+- **Vectorized Evaluation**: Support for pricing "strips" of options across multiple strikes/maturities simultaneously (Struct-of-Arrays pattern).
 - **Parallel Computing**: Fully utilizes OpenMP for robust Monte Carlo path simulation.
 
 ---
@@ -30,7 +31,7 @@ MyQuantLib implements the **Affine Stochastic Volatility and Jumps (ASVJ)** fram
 - **Path-Dependent**:
   - **Asian**: Geometric, Arithmetic.
   - **Lookback**: Continuous Fixed, Continuous Floating.
-  - **Barrier**: Up-and-Out, Up-and-In, Down-and-Out, Down-and-In (with Equivalent Barrier Method enhancements for discrete monitoring limits).
+  - **Barrier**: Up-and-Out, Up-and-In, Down-and-Out, Down-and-In.
 
 ## 🧮 Pricing Engines & Numerical Schemes
 
@@ -122,6 +123,7 @@ This architecture translates a potentially very complex web of `if-else` rules a
 ---
 
 ## 🔮 Next Steps / Future Work
-- Implementation of a **Runtime Dispatch Layer** (via `std::variant`) to allow parsing model and instrument configurations from CSV/JSON/DB at runtime while retaining the zero-overhead engine core.
-- Integration of the **Likelihood Ratio Method (LRM)** or Score Function Method to accurately compute MC Greeks on discontinuous digital payoffs without finite-difference boundary issues.
+- Integration of **Payoff Smoothing** to accurately compute Monte Carlo Greeks on discontinuous digital payoffs without finite-difference boundary issues.
 - Integration of full Volatility Surfaces and Yield Curves.
+- Implementation of a generalized **Calibration Module** to fit ASVJ models to market data.
+- Integration of advanced acceleration techniques: **Richardson-Romberg extrapolation**, **Random grids**, **Multilevel Monte Carlo (MLMC)**, and **Multi Level Richardson-Romberg extrapolation  (ML2R)** methods.
