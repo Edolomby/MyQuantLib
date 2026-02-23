@@ -1,15 +1,26 @@
 #pragma once
 #include <cmath>
 #include <complex>
-#include <myql/engines/fourier/FourierTypes.hpp>
+#include <myql/core/PricingTypes.hpp>
 #include <myql/models/asvj/core/AffineTraits.hpp>
+
+// -----------------------------------------------------------------------------
+// KERNEL TARGETS (Mathematical Factorization specific to Fourier)
+// -----------------------------------------------------------------------------
+enum class KernelTarget {
+  Price, // W(u) = 1 / (iu)
+  Dx,    // W(u) = 1
+  Dxx,   // W(u) = iu
+  Vega,  // Placeholder for Full Mode
+  Theta, // Placeholder for Full Mode
+  Rho    // Placeholder for Full Mode
+};
 
 // =============================================================================
 // EUROPEAN OPTION STRATEGY (Generic)
 // Implements the Gil-Pelaez Integrand for P1 and P2 probabilities.
 // use general KernelTarget enum to select kernel (enabling greeks)
 // =============================================================================
-
 template <KernelTarget Target, typename Model, typename Traits>
 class GilPelaezKernel {
 public:

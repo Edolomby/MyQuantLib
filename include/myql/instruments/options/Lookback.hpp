@@ -1,79 +1,86 @@
 #pragma once
+#include <myql/core/PricingTypes.hpp>
 #include <myql/instruments/Payoffs.hpp>
 #include <myql/instruments/trackers/PathTrackers.hpp>
-#include <vector>
+#include <type_traits>
 
-// =============================================================================
-// SINGLE LOOKBACK OPTION
-// =============================================================================
-template <typename PayoffT, bool FixedStrike> class LookbackOption {
-  double strike_;
+template <typename PayoffT, bool FixedStrike, typename StrikeContainer = double>
+class LookbackOption {
+  StrikeContainer strikes_;
   double T_;
   PayoffT payoff_func_;
 
-public:
-  using Tracker = TrackerLookback;
-  using ResultType = double;
-  using PayoffType = PayoffT;
+  static constexpr bool is_scalar = std::is_floating_point_v<StrikeContainer>;
 
-  LookbackOption(double K, double T) : strike_(K), T_(T) {}
-
-  typename Tracker::Config get_tracker_config() const { return {}; }
-
-  template <typename State> double calculate(const State &state) const {
-    double res;
-    calculate_to_buffer(state, res);
-    return res;
-  }
-
-  template <typename State>
-  void calculate_to_buffer(const State &state, double &buffer) const {
-    // We use the static constexpr Type we added to the Payoff structs
-    constexpr bool is_call = (PayoffT::Type == OptionType::Call);
-
+  // Helper to compute payoff based on strike type //prevent to many ifs
+  inline double compute_payoff(double spot_scaled, double extreme_scaled,
+                               double K) const {
     if constexpr (FixedStrike) {
-      double extreme = is_call ? state.maxLogS : state.minLogS;
-      buffer = payoff_func_(extreme, strike_);
+      return payoff_func_(extreme_scaled, K);
     } else {
-      double floating_strike = is_call ? state.minLogS : state.maxLogS;
-      buffer = payoff_func_(state.logS, floating_strike);
+      return payoff_func_(spot_scaled, extreme_scaled);
     }
   }
-
-  size_t size() const { return 1; }
-  double get_maturity() const { return T_; }
-};
-
-// =============================================================================
-// LOOKBACK FIXED STRIP (Smile/Vector)
-// =============================================================================
-template <typename PayoffT> class LookbackFixedStrip {
-  std::vector<double> strikes_;
-  double T_;
-  PayoffT payoff_func_;
 
 public:
   using Tracker = TrackerLookback;
-  using ResultType = std::vector<double>;
+  using ResultType = StrikeContainer;
   using PayoffType = PayoffT;
 
-  LookbackFixedStrip(const std::vector<double> &strikes, double T)
-      : strikes_(strikes), T_(T) {}
+  LookbackOption(const StrikeContainer &K, double T) : strikes_(K), T_(T) {}
 
-  typename Tracker::Config get_tracker_config() const { return {}; }
+  template <GreekMode Mode = GreekMode::None>
+  typename Tracker::Config
+  get_tracker_config([[maybe_unused]] double S0 = 100.0,
+                     [[maybe_unused]] double h = 0.0) const {
+    return {};
+  }
 
-  template <typename State>
-  void calculate_to_buffer(const State &state,
-                           std::vector<double> &buffer) const {
+  template <GreekMode Mode, typename State>
+  void calculate_to_buffer(const State &state, double S0, double h,
+                           ResultType &base, ResultType &up,
+                           ResultType &dn) const {
+
     constexpr bool is_call = (PayoffT::Type == OptionType::Call);
-    double extreme = is_call ? state.maxLogS : state.minLogS;
+    double S_T = state.logS;
 
-    for (size_t i = 0; i < strikes_.size(); ++i) {
-      buffer[i] = payoff_func_(extreme, strikes_[i]);
+    double extreme = 0.0;
+    if constexpr (FixedStrike) {
+      extreme = is_call ? state.maxLogS : state.minLogS;
+    } else {
+      extreme = is_call ? state.minLogS : state.maxLogS;
+    }
+
+    double mult_up = 1.0;
+    double mult_dn = 1.0;
+    if constexpr (Mode == GreekMode::Essential || Mode == GreekMode::Full) {
+      mult_up = (S0 + h) / S0;
+      mult_dn = (S0 - h) / S0;
+    }
+
+    if constexpr (is_scalar) {
+      base = compute_payoff(S_T, extreme, strikes_);
+      if constexpr (Mode == GreekMode::Essential || Mode == GreekMode::Full) {
+        up = compute_payoff(S_T * mult_up, extreme * mult_up, strikes_);
+        dn = compute_payoff(S_T * mult_dn, extreme * mult_dn, strikes_);
+      }
+    } else {
+      for (size_t i = 0; i < strikes_.size(); ++i) {
+        base[i] = compute_payoff(S_T, extreme, strikes_[i]);
+        if constexpr (Mode == GreekMode::Essential || Mode == GreekMode::Full) {
+          up[i] = compute_payoff(S_T * mult_up, extreme * mult_up, strikes_[i]);
+          dn[i] = compute_payoff(S_T * mult_dn, extreme * mult_dn, strikes_[i]);
+        }
+      }
     }
   }
 
-  size_t size() const { return strikes_.size(); }
+  size_t size() const {
+    if constexpr (is_scalar)
+      return 1;
+    else
+      return strikes_.size();
+  }
   double get_maturity() const { return T_; }
-  const std::vector<double> &get_strikes() const { return strikes_; }
+  const StrikeContainer &get_strikes() const { return strikes_; }
 };

@@ -1,8 +1,8 @@
 #pragma once
 #include <cmath>
+#include <myql/core/PricingTypes.hpp>
 #include <myql/instruments/Payoffs.hpp>
 #include <myql/instruments/trackers/PathTrackers.hpp>
-#include <vector>
 
 // =============================================================================
 // ENUMS
@@ -12,126 +12,105 @@ enum class BarrierAction { In, Out };
 enum class RebateTiming { None, AtHit, AtMaturity };
 
 // =============================================================================
-// SINGLE BARRIER OPTION
+// UNIFIED SINGLE BARRIER OPTION
 // =============================================================================
 template <typename PayoffT, BarrierDirection Dir, BarrierAction Action,
-          RebateTiming Timing>
+          RebateTiming Timing, typename StrikeContainer = double>
 class BarrierOption {
-  double strike_;
+  StrikeContainer strikes_;
   double barrier_;
   double T_;
   double rate_;
   double rebate_;
   PayoffT payoff_func_;
 
-public:
-  // Map the direction to the correct tracker at compile-time!
-  using Tracker = TrackerBarrier<(Dir == BarrierDirection::Up)>;
-  using ResultType = double;
-  using PayoffType = PayoffT;
+  static constexpr bool is_scalar = std::is_floating_point_v<StrikeContainer>;
 
-  BarrierOption(double K, double B, double T, double r = 0.0,
-                double rebate = 0.0)
-      : strike_(K), barrier_(B), T_(T), rate_(r), rebate_(rebate) {}
-
-  typename Tracker::Config get_tracker_config() const {
-    return {std::log(barrier_)};
-  }
-
-  template <typename State> double calculate(const State &state) const {
-    double res;
-    calculate_to_buffer(state, res);
-    return res;
-  }
-
-  template <typename State>
-  void calculate_to_buffer(const State &state, double &buffer) const {
-
-    // Compile-time Rebate Logic
+  inline double compute_payoff(double spot, double K, bool is_hit,
+                               double hit_time) const {
     double active_rebate = 0.0;
     if constexpr (Timing != RebateTiming::None) {
       active_rebate = rebate_;
       if constexpr (Timing == RebateTiming::AtHit) {
-        if (state.is_hit) {
-          // Forward compound to maturity T
-          active_rebate = rebate_ * std::exp(rate_ * (T_ - state.hit_time));
-        }
+        if (is_hit)
+          active_rebate = rebate_ * std::exp(rate_ * (T_ - hit_time));
       }
     }
-
-    // Payoff Logic (Tracker already converted state.logS to Price)
-    double S_T = state.logS;
 
     if constexpr (Action == BarrierAction::In) {
-      buffer = state.is_hit ? payoff_func_(S_T, strike_) : active_rebate;
-    } else { // BarrierAction::Out
-      buffer = state.is_hit ? active_rebate : payoff_func_(S_T, strike_);
+      return is_hit ? payoff_func_(spot, K) : active_rebate;
+    } else {
+      return is_hit ? active_rebate : payoff_func_(spot, K);
     }
   }
-
-  size_t size() const { return 1; }
-  double get_maturity() const { return T_; }
-  double get_strike() const { return strike_; }
-  double get_barrier() const { return barrier_; } // Critical for the Engine
-};
-
-// =============================================================================
-// BARRIER FIXED STRIP (Vectorized)
-// =============================================================================
-template <typename PayoffT, BarrierDirection Dir, BarrierAction Action,
-          RebateTiming Timing>
-class BarrierFixedStrip {
-  std::vector<double> strikes_;
-  double barrier_;
-  double T_;
-  double rate_;
-  double rebate_;
-  PayoffT payoff_func_;
 
 public:
   using Tracker = TrackerBarrier<(Dir == BarrierDirection::Up)>;
-  using ResultType = std::vector<double>;
+  using ResultType = StrikeContainer;
   using PayoffType = PayoffT;
 
-  BarrierFixedStrip(const std::vector<double> &strikes, double B, double T,
-                    double r = 0.0, double rebate = 0.0)
-      : strikes_(strikes), barrier_(B), T_(T), rate_(r), rebate_(rebate) {}
+  BarrierOption(const StrikeContainer &K, double B, double T, double r = 0.0,
+                double rebate = 0.0)
+      : strikes_(K), barrier_(B), T_(T), rate_(r), rebate_(rebate) {}
 
-  typename Tracker::Config get_tracker_config() const {
-    return {std::log(barrier_)};
+  // 1. CONFIGURATION: Pass the GreekMode, S0, and h to compute the 3 barriers
+  template <GreekMode Mode>
+  typename Tracker::Config get_tracker_config(double S0 = 100.0,
+                                              double h = 0.0) const {
+    typename Tracker::Config cfg;
+    cfg.barrier_log_base = std::log(barrier_);
+
+    if constexpr (Mode == GreekMode::Essential || Mode == GreekMode::Full) {
+      // Inversely scale the barriers!
+      cfg.barrier_log_up = std::log(barrier_ * S0 / (S0 + h));
+      cfg.barrier_log_dn = std::log(barrier_ * S0 / (S0 - h));
+    } else {
+      cfg.barrier_log_up = cfg.barrier_log_base;
+      cfg.barrier_log_dn = cfg.barrier_log_base;
+    }
+    return cfg;
   }
 
-  template <typename State>
-  void calculate_to_buffer(const State &state,
-                           std::vector<double> &buffer) const {
-
-    double active_rebate = 0.0;
-    if constexpr (Timing != RebateTiming::None) {
-      active_rebate = rebate_;
-      if constexpr (Timing == RebateTiming::AtHit) {
-        if (state.is_hit) {
-          active_rebate = rebate_ * std::exp(rate_ * (T_ - state.hit_time));
-        }
-      }
-    }
+  // 2. BUFFER CALCULATION: Perfectly unbiased
+  template <GreekMode Mode, typename State>
+  void calculate_to_buffer(const State &state, double S0, double h,
+                           ResultType &base, ResultType &up,
+                           ResultType &dn) const {
 
     double S_T = state.logS;
 
-    for (size_t i = 0; i < strikes_.size(); ++i) {
-      if constexpr (Action == BarrierAction::In) {
-        buffer[i] =
-            state.is_hit ? payoff_func_(S_T, strikes_[i]) : active_rebate;
-      } else {
-        buffer[i] =
-            state.is_hit ? active_rebate : payoff_func_(S_T, strikes_[i]);
+    double mult_up = 1.0, mult_dn = 1.0;
+    if constexpr (Mode == GreekMode::Essential || Mode == GreekMode::Full) {
+      mult_up = (S0 + h) / S0;
+      mult_dn = (S0 - h) / S0;
+    }
+
+    if constexpr (is_scalar) {
+      base =
+          compute_payoff(S_T, strikes_, state.is_hit_base, state.hit_time_base);
+      if constexpr (Mode == GreekMode::Essential || Mode == GreekMode::Full) {
+        up = compute_payoff(S_T * mult_up, strikes_, state.is_hit_up,
+                            state.hit_time_up);
+        dn = compute_payoff(S_T * mult_dn, strikes_, state.is_hit_dn,
+                            state.hit_time_dn);
+      }
+    } else {
+      for (size_t i = 0; i < strikes_.size(); ++i) {
+        base[i] = compute_payoff(S_T, strikes_[i], state.is_hit_base,
+                                 state.hit_time_base);
+        if constexpr (Mode == GreekMode::Essential || Mode == GreekMode::Full) {
+          up[i] = compute_payoff(S_T * mult_up, strikes_[i], state.is_hit_up,
+                                 state.hit_time_up);
+          dn[i] = compute_payoff(S_T * mult_dn, strikes_[i], state.is_hit_dn,
+                                 state.hit_time_dn);
+        }
       }
     }
   }
 
-  size_t size() const { return strikes_.size(); }
+  size_t size() const { return is_scalar ? 1 : strikes_.size(); }
   double get_maturity() const { return T_; }
   double get_barrier() const { return barrier_; }
-  const std::vector<double> &get_strikes() const { return strikes_; }
 };
 
 // =============================================================================

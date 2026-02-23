@@ -4,8 +4,8 @@
 #include <vector>
 
 // CORE ENGINES
-#include <myql/engines/fourier/FourierPricer.hpp>
-#include <myql/engines/montecarlo/MonteCarloEngine.hpp>
+#include <myql/pricers/fourier/FourierPricer.hpp>
+#include <myql/pricers/montecarlo/MonteCarloPricer.hpp>
 
 // MODELS & STEPPERS
 #include <myql/models/asvj/core/ASVJmodel.hpp>
@@ -59,21 +59,25 @@ void run_smile_test(const std::string &name, const ModelType &model,
     }
 
     // 2. DEFINE THE STRIP INSTRUMENT
-    using StripT = EuropeanStrip<PayoffVanilla<OptionType::Call>>;
+    using StripT =
+        EuropeanOption<PayoffVanilla<OptionType::Call>, std::vector<double>>;
     StripT smile_strip(strikes, T);
 
     // 3. VECTORIZED FOURIER PRICING
-    // Our updated Fourier pricer handles the strip by looping internally.
-    auto fourier_results = price_fourier(model, S0, r, q, smile_strip, f_cfg);
+    FourierPricer<ModelType, StripT> f_engine(model, f_cfg);
+    auto fourier_results = f_engine.calculate(S0, r, q, smile_strip);
 
     // 4. VECTORIZED MONTE CARLO PRICING
     // The engine now uses the Buffered Pattern: 1 path = N prices.
-    MonteCarloEngine<ModelType, StepperType, StripT> engine(model, mc_cfg);
-    auto [mc_prices, mc_errors] = engine.calculate(S0, r, q, smile_strip);
+    MonteCarloPricer<ModelType, StepperType, StripT> engine(model, mc_cfg);
+    auto mc_res = engine.calculate(S0, r, q, smile_strip);
+
+    auto mc_prices = mc_res.price;
+    auto mc_errors = mc_res.price_std_err;
 
     // 5. STORE RESULTS (Flatten the vectors for the TablePrinter)
     for (size_t i = 0; i < strikes.size(); ++i) {
-      double diff = mc_prices[i] - fourier_results[i].price;
+      double diff = mc_prices[i] - fourier_results.price[i];
       double z = (mc_errors[i] > 1e-12) ? diff / mc_errors[i] : 0.0;
 
       std::string stat_tag = "OK";
@@ -85,7 +89,7 @@ void run_smile_test(const std::string &name, const ModelType &model,
       global_storage.model.push_back(name);
       global_storage.T.push_back(T);
       global_storage.K.push_back(strikes[i]);
-      global_storage.fourier.push_back(fourier_results[i].price);
+      global_storage.fourier.push_back(fourier_results.price[i]);
       global_storage.mc.push_back(mc_prices[i]);
       global_storage.stderr.push_back(mc_errors[i]);
       global_storage.z_score.push_back(z);

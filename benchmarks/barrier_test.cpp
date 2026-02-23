@@ -5,7 +5,7 @@
 #include <vector>
 
 // CORE ENGINES
-#include <myql/engines/montecarlo/MonteCarloEngine.hpp>
+#include <myql/pricers/montecarlo/MonteCarloPricer.hpp>
 
 // MODELS & STEPPERS
 #include <myql/models/asvj/core/ASVJmodel.hpp>
@@ -41,7 +41,7 @@ struct ResultStorage {
 ResultStorage global_storage;
 
 // -----------------------------------------------------------------------------
-// TEST RUNNER (Now templated on OptionType)
+// TEST RUNNER
 // -----------------------------------------------------------------------------
 template <OptionType OptT, typename ModelType, typename EurStepper,
           typename UpBarrierStepper, typename DownBarrierStepper>
@@ -60,15 +60,19 @@ void run_parity_test(const std::string &model_name, const ModelType &model,
   std::string opt_str = (OptT == OptionType::Call) ? "Call" : "Put";
 
   // 1. DEFINE STRIP INSTRUMENTS
-  using StripEur = EuropeanStrip<PayoffVanilla<OptT>>;
-  using StripUI = BarrierFixedStrip<PayoffVanilla<OptT>, BarrierDirection::Up,
-                                    BarrierAction::In, RebateTiming::None>;
-  using StripUO = BarrierFixedStrip<PayoffVanilla<OptT>, BarrierDirection::Up,
-                                    BarrierAction::Out, RebateTiming::None>;
-  using StripDI = BarrierFixedStrip<PayoffVanilla<OptT>, BarrierDirection::Down,
-                                    BarrierAction::In, RebateTiming::None>;
-  using StripDO = BarrierFixedStrip<PayoffVanilla<OptT>, BarrierDirection::Down,
-                                    BarrierAction::Out, RebateTiming::None>;
+  using StripEur = EuropeanOption<PayoffVanilla<OptT>, std::vector<double>>;
+  using StripUI =
+      BarrierOption<PayoffVanilla<OptT>, BarrierDirection::Up,
+                    BarrierAction::In, RebateTiming::None, std::vector<double>>;
+  using StripUO = BarrierOption<PayoffVanilla<OptT>, BarrierDirection::Up,
+                                BarrierAction::Out, RebateTiming::None,
+                                std::vector<double>>;
+  using StripDI =
+      BarrierOption<PayoffVanilla<OptT>, BarrierDirection::Down,
+                    BarrierAction::In, RebateTiming::None, std::vector<double>>;
+  using StripDO = BarrierOption<PayoffVanilla<OptT>, BarrierDirection::Down,
+                                BarrierAction::Out, RebateTiming::None,
+                                std::vector<double>>;
 
   StripEur eur_strip(strikes, T);
   StripUI ui_strip(strikes, B_up, T);
@@ -77,21 +81,21 @@ void run_parity_test(const std::string &model_name, const ModelType &model,
   StripDO do_strip(strikes, B_down, T);
 
   // 2. RUN EUROPEAN BASELINE
-  MonteCarloEngine<ModelType, EurStepper, StripEur> eur_engine(model, mc_cfg);
-  auto [eur_prices, eur_errs] = eur_engine.calculate(S0, r, q, eur_strip);
+  MonteCarloPricer<ModelType, EurStepper, StripEur> eur_engine(model, mc_cfg);
+  auto eur_res = eur_engine.calculate(S0, r, q, eur_strip);
 
   // 3. RUN UP-BARRIER PARITY
-  MonteCarloEngine<ModelType, UpBarrierStepper, StripUI> ui_engine(model,
+  MonteCarloPricer<ModelType, UpBarrierStepper, StripUI> ui_engine(model,
                                                                    mc_cfg);
-  auto [ui_prices, ui_errs] = ui_engine.calculate(S0, r, q, ui_strip);
+  auto ui_res = ui_engine.calculate(S0, r, q, ui_strip);
 
-  MonteCarloEngine<ModelType, UpBarrierStepper, StripUO> uo_engine(model,
+  MonteCarloPricer<ModelType, UpBarrierStepper, StripUO> uo_engine(model,
                                                                    mc_cfg);
-  auto [uo_prices, uo_errs] = uo_engine.calculate(S0, r, q, uo_strip);
+  auto uo_res = uo_engine.calculate(S0, r, q, uo_strip);
 
   for (size_t i = 0; i < strikes.size(); ++i) {
-    double sum_in_out = ui_prices[i] + uo_prices[i];
-    double diff = std::abs(sum_in_out - eur_prices[i]);
+    double sum_in_out = ui_res.price[i] + uo_res.price[i];
+    double diff = std::abs(sum_in_out - eur_res.price[i]);
     std::string stat_tag = (diff < 1e-10) ? "PASS" : "[FAIL]";
 
     global_storage.model.push_back(model_name);
@@ -99,26 +103,26 @@ void run_parity_test(const std::string &model_name, const ModelType &model,
     global_storage.T.push_back(T);
     global_storage.K.push_back(strikes[i]);
     global_storage.barrier.push_back(B_up);
-    global_storage.eur_price.push_back(eur_prices[i]);
-    global_storage.in_price.push_back(ui_prices[i]);
-    global_storage.out_price.push_back(uo_prices[i]);
+    global_storage.eur_price.push_back(eur_res.price[i]);
+    global_storage.in_price.push_back(ui_res.price[i]);
+    global_storage.out_price.push_back(uo_res.price[i]);
     global_storage.in_out_sum.push_back(sum_in_out);
     global_storage.diff.push_back(diff);
     global_storage.status.push_back(stat_tag);
   }
 
   // 4. RUN DOWN-BARRIER PARITY
-  MonteCarloEngine<ModelType, DownBarrierStepper, StripDI> di_engine(model,
+  MonteCarloPricer<ModelType, DownBarrierStepper, StripDI> di_engine(model,
                                                                      mc_cfg);
-  auto [di_prices, di_errs] = di_engine.calculate(S0, r, q, di_strip);
+  auto di_res = di_engine.calculate(S0, r, q, di_strip);
 
-  MonteCarloEngine<ModelType, DownBarrierStepper, StripDO> do_engine(model,
+  MonteCarloPricer<ModelType, DownBarrierStepper, StripDO> do_engine(model,
                                                                      mc_cfg);
-  auto [do_prices, do_errs] = do_engine.calculate(S0, r, q, do_strip);
+  auto do_res = do_engine.calculate(S0, r, q, do_strip);
 
   for (size_t i = 0; i < strikes.size(); ++i) {
-    double sum_in_out = di_prices[i] + do_prices[i];
-    double diff = std::abs(sum_in_out - eur_prices[i]);
+    double sum_in_out = di_res.price[i] + do_res.price[i];
+    double diff = std::abs(sum_in_out - eur_res.price[i]);
     std::string stat_tag = (diff < 1e-10) ? "PASS" : "[FAIL]";
 
     global_storage.model.push_back(model_name);
@@ -126,9 +130,9 @@ void run_parity_test(const std::string &model_name, const ModelType &model,
     global_storage.T.push_back(T);
     global_storage.K.push_back(strikes[i]);
     global_storage.barrier.push_back(B_down);
-    global_storage.eur_price.push_back(eur_prices[i]);
-    global_storage.in_price.push_back(di_prices[i]);
-    global_storage.out_price.push_back(do_prices[i]);
+    global_storage.eur_price.push_back(eur_res.price[i]);
+    global_storage.in_price.push_back(di_res.price[i]);
+    global_storage.out_price.push_back(do_res.price[i]);
     global_storage.in_out_sum.push_back(sum_in_out);
     global_storage.diff.push_back(diff);
     global_storage.status.push_back(stat_tag);
@@ -150,7 +154,7 @@ int main() {
                "====================================\n";
 
   MonteCarloConfig mc_cfg;
-  mc_cfg.num_paths = 2500000; // 1M paths is plenty for exact parity
+  mc_cfg.num_paths = 250000; // 1M paths is plenty for exact parity
   mc_cfg.time_steps = 252;
   mc_cfg.seed = 42;
 

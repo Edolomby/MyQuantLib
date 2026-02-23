@@ -68,6 +68,7 @@ add_benchmark(ExoticConsistency benchmarks/exotic_consistency.cpp)
 add_benchmark(SplineTest benchmarks/spline_test.cpp)
 add_benchmark(CirTest benchmarks/cir_test.cpp)
 add_benchmark(BarrierTest benchmarks/barrier_test.cpp)
+add_benchmark(EssentialGreekTest benchmarks/EssentialGreekTest.cpp)
 
 # ==============================================================================
 # 5. STATUS REPORT

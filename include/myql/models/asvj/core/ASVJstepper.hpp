@@ -95,10 +95,10 @@ public:
     }
 
     if constexpr (NumCirs == 0) {
-      double var = model.sigma * model.sigma;
+      double var = model.vol * model.vol;
       auto &gbm = std::get<0>(diffusion_data_);
       gbm.drift_dt = (r - q - 0.5 * var) * dt_;
-      gbm.vol_dt = model.sigma * std::sqrt(dt_);
+      gbm.vol_dt = model.vol * std::sqrt(dt_);
     } else {
       double r_part = (r - q) / static_cast<double>(NumCirs);
       if constexpr (NumCirs == 1) {
@@ -205,7 +205,6 @@ public:
         v_curr[0] = v0_next;
         v_curr[1] = v1_next;
       }
-
       // Jumps (PATH DEPENDENT ONLY)
       if constexpr (TrackerPolicy::is_path_dependent) {
         double jump =

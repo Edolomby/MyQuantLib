@@ -1,6 +1,7 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <myql/core/PricingTypes.hpp>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -8,13 +9,13 @@
 // =============================================================================
 // MYQUANTLIB INCLUDES
 // =============================================================================
-#include <myql/engines/fourier/FourierPricer.hpp>
-#include <myql/engines/montecarlo/MonteCarloEngine.hpp>
 #include <myql/models/asvj/core/ASVJmodel.hpp>
 #include <myql/models/asvj/core/ASVJstepper.hpp>
 #include <myql/models/asvj/data/ModelParams.hpp>
 #include <myql/models/asvj/policies/JumpPolicies.hpp>
 #include <myql/models/asvj/policies/VolSchemes.hpp>
+#include <myql/pricers/fourier/FourierPricer.hpp>
+#include <myql/pricers/montecarlo/MonteCarloPricer.hpp>
 #include <myql/utils/TablePrinter.hpp>
 
 // NEW: Include the Instruments
@@ -55,7 +56,8 @@ void run_single_test(const std::string &model_name, const ModelType &model,
   // Variables to hold the results
   double p_fourier = 0.0;
   double t_fourier = 0.0;
-  std::pair<double, double> res_mc = {0.0, 0.0};
+  double mc_price = 0.0;
+  double mc_stderr = 0.0;
   double t_mc = 0.0;
 
   // =========================================================
@@ -68,15 +70,18 @@ void run_single_test(const std::string &model_name, const ModelType &model,
 
     // Fourier Pricing
     auto s1 = std::chrono::high_resolution_clock::now();
-    p_fourier = price_fourier(model, S0, r, q, option, four_cfg).price;
+    FourierPricer<ModelType, InstrumentT> f_engine_call(model, four_cfg);
+    p_fourier = f_engine_call.calculate(S0, r, q, option).price;
     auto e1 = std::chrono::high_resolution_clock::now();
     t_fourier = std::chrono::duration<double>(e1 - s1).count() * 1000.0; // ms
 
     // 3. Monte Carlo Pricing
     auto s2 = std::chrono::high_resolution_clock::now();
-    MonteCarloEngine<ModelType, StepperType, InstrumentT, RNG> engine(model,
-                                                                      mc_cfg);
-    res_mc = engine.calculate(S0, r, q, option);
+    MonteCarloPricer<ModelType, StepperType, InstrumentT, GreekMode::None, RNG>
+        engine(model, mc_cfg);
+    auto res_mc = engine.calculate(S0, r, q, option);
+    mc_price = res_mc.price;
+    mc_stderr = res_mc.price_std_err;
     auto e2 = std::chrono::high_resolution_clock::now();
     t_mc = std::chrono::duration<double>(e2 - s2).count(); // s
 
@@ -87,22 +92,25 @@ void run_single_test(const std::string &model_name, const ModelType &model,
 
     // 2. Fourier Pricing (Reference)
     auto s1 = std::chrono::high_resolution_clock::now();
-    p_fourier = price_fourier(model, S0, r, q, option, four_cfg).price;
+    FourierPricer<ModelType, InstrumentT> f_engine_put(model, four_cfg);
+    p_fourier = f_engine_put.calculate(S0, r, q, option).price;
     auto e1 = std::chrono::high_resolution_clock::now();
     t_fourier = std::chrono::duration<double>(e1 - s1).count() * 1000.0; // ms
 
     // 3. Monte Carlo Pricing
     auto s2 = std::chrono::high_resolution_clock::now();
-    MonteCarloEngine<ModelType, StepperType, InstrumentT, RNG> engine(model,
-                                                                      mc_cfg);
-    res_mc = engine.calculate(S0, r, q, option);
+    MonteCarloPricer<ModelType, StepperType, InstrumentT, GreekMode::None, RNG>
+        engine(model, mc_cfg);
+    auto res_mc = engine.calculate(S0, r, q, option);
+    mc_price = res_mc.price;
+    mc_stderr = res_mc.price_std_err;
     auto e2 = std::chrono::high_resolution_clock::now();
     t_mc = std::chrono::duration<double>(e2 - s2).count(); // s
   }
 
   // C. Record Results
-  double diff = res_mc.first - p_fourier;
-  double z = (res_mc.second > 1e-14) ? diff / res_mc.second : 0.0;
+  double diff = mc_price - p_fourier;
+  double z = (mc_stderr > 1e-14) ? diff / mc_stderr : 0.0;
 
   std::string stat_tag = "OK";
   if (std::abs(z) > 4.0)
@@ -117,9 +125,9 @@ void run_single_test(const std::string &model_name, const ModelType &model,
   results.scenarios.push_back(model_name);
   results.details.push_back(ss.str());
   results.fourier_prices.push_back(p_fourier);
-  results.mc_prices.push_back(res_mc.first);
+  results.mc_prices.push_back(mc_price);
   results.diffs.push_back(diff);
-  results.mc_stderrs.push_back(res_mc.second);
+  results.mc_stderrs.push_back(mc_stderr);
   results.z_scores.push_back(z);
   results.time_fourier.push_back(t_fourier);
   results.time_mc.push_back(t_mc);

@@ -21,6 +21,19 @@ inline std::vector<T> &operator+=(std::vector<T> &lhs,
   return lhs;
 }
 
+// Vector + Vector (Element-wise Addition)
+// Used in: (p_up - p_base*2.0 + p_dn) for gamma finite differences
+template <typename T>
+inline std::vector<T> operator+(const std::vector<T> &lhs,
+                                const std::vector<T> &rhs) {
+  assert(lhs.size() == rhs.size() && "VectorOps: Size mismatch in + addition");
+  std::vector<T> result = lhs;
+  for (size_t i = 0; i < result.size(); ++i) {
+    result[i] += rhs[i];
+  }
+  return result;
+}
+
 // Vector * Vector (Element-wise Multiplication for Variance)
 // Used in: sum_sq += payoff * payoff
 template <typename T>

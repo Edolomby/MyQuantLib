@@ -1,17 +1,17 @@
 ```
 .
 ├── myql
+│   ├── core
+│   │   └── PricingTypes.hpp
 │   ├── engines
-│   │   ├── fourier
-│   │   │   ├── FourierEngine.hpp
-│   │   │   ├── FourierPricer.hpp
-│   │   │   └── kernels
-│   │   │       └── GilPeleazKernel.hpp
-│   │   └── montecarlo
-│   │       └── MonteCarloEngine.hpp
+│   │   └── fourier
+│   │       ├── FourierEngine.hpp
+│   │       └── kernels
+│   │           └── GilPeleazKernel.hpp
 │   ├── instruments
 │   │   ├── options
 │   │   │   ├── Asian.hpp
+│   │   │   ├── Barrier.hpp
 │   │   │   ├── European.hpp
 │   │   │   └── Lookback.hpp
 │   │   ├── Payoffs.hpp
@@ -19,6 +19,8 @@
 │   │       └── PathTrackers.hpp
 │   ├── math
 │   │   ├── Integration.hpp
+│   │   ├── interpolation
+│   │   │   └── splines.hpp
 │   │   └── Numerics.hpp
 │   ├── models
 │   │   └── asvj
@@ -32,9 +34,15 @@
 │   │           ├── CFPolicies.hpp
 │   │           ├── JumpPolicies.hpp
 │   │           └── VolSchemes.hpp
+│   ├── pricers
+│   │   ├── fourier
+│   │   │   └── FourierPricer.hpp
+│   │   └── montecarlo
+│   │       └── MonteCarloPricer.hpp
 │   └── utils
 │       ├── TablePrinter.hpp
 │       └── VectorOps.hpp
 └── tests
+
 
 ```

@@ -5,8 +5,8 @@
 #include <vector>
 
 // CORE ENGINES
-#include <myql/engines/fourier/FourierPricer.hpp>
-#include <myql/engines/montecarlo/MonteCarloEngine.hpp>
+#include <myql/pricers/fourier/FourierPricer.hpp>
+#include <myql/pricers/montecarlo/MonteCarloPricer.hpp>
 
 // MODELS & STEPPERS
 #include <myql/models/asvj/core/ASVJmodel.hpp>
@@ -163,16 +163,17 @@ int main() {
         AsianOption<TrackerArithAsian, PayoffVanilla<OptionType::Call>, true>;
     AsianT asian_instr(K, T);
 
-    MonteCarloEngine<
+    MonteCarloPricer<
         HestonModel,
         ASVJStepper<SchemeExact, NullVolScheme, NoJumps, TrackerArithAsian>,
         AsianT>
         mc_engine(model, mc_cfg);
-    auto [mc_res, mc_err] = mc_engine.calculate(S0, r, q, asian_instr);
+    auto asian_res = mc_engine.calculate(S0, r, q, asian_instr);
 
     double effective_K = 2.0 * K - S0;
     double euro_price = black_scholes_call(S0, effective_K, T, r, q, sigma);
-    log_result("Asian 1-Step (S0+S1)/2", mc_res, 0.5 * euro_price, mc_err);
+    log_result("Asian 1-Step (S0+S1)/2", asian_res.price, 0.5 * euro_price,
+               asian_res.price_std_err);
   }
 
   // -------------------------------------------------------------------------
@@ -186,15 +187,16 @@ int main() {
         AsianOption<TrackerGeoAsian, PayoffVanilla<OptionType::Call>, true>;
     GeoT asian_instr(K, T);
 
-    MonteCarloEngine<
+    MonteCarloPricer<
         HestonModel,
         ASVJStepper<SchemeExact, NullVolScheme, NoJumps, TrackerGeoAsian>, GeoT>
         mc_engine(model, mc_cfg);
-    auto [mc_res, mc_err] = mc_engine.calculate(S0, r, q, asian_instr);
+    auto geo_res = mc_engine.calculate(S0, r, q, asian_instr);
 
     double bench =
         geometric_asian_discrete_benchmark(S0, K, T, r, q, sigma, steps);
-    log_result("Geometric Asian (12-step + S0)", mc_res, bench, mc_err);
+    log_result("Geometric Asian (12-step + S0)", geo_res.price, bench,
+               geo_res.price_std_err);
   }
 
   // -------------------------------------------------------------------------
@@ -206,27 +208,24 @@ int main() {
     using LookbackT = LookbackOption<PayoffVanilla<OptionType::Call>, true>;
     LookbackT lb_instr(K, T);
 
-    // we use the low vol
-    MonteCarloEngine<
+    MonteCarloPricer<
         HestonModel,
         ASVJStepper<SchemeNV, NullVolScheme, NoJumps, TrackerLookback>,
         LookbackT>
         lb_engine(model, mc_cfg);
-    auto [mc_res, mc_err] = lb_engine.calculate(S0, r, q, lb_instr);
+    auto lb_res = lb_engine.calculate(S0, r, q, lb_instr);
 
     // 1. Calculate Continuous Analytic Price
     double bench_continuous =
         analytic_lookback_fixed_call(S0, K, T, r, q, sigma);
 
     // 2. Apply BGK (1997) Correction for Discrete Sampling
-    // Price_Discrete approx Price_Continuous * exp( -0.5826 * sigma * sqrt(dt)
-    // )
     double dt = T / mc_cfg.time_steps;
     double correction = std::exp(-0.5826 * sigma * std::sqrt(dt));
     double bench_discrete = bench_continuous * correction;
 
-    log_result("Lookback Fixed Call (Analytic BS)", mc_res, bench_discrete,
-               mc_err);
+    log_result("Lookback Fixed Call (Analytic BS)", lb_res.price,
+               bench_discrete, lb_res.price_std_err);
   }
 
   // -------------------------------------------------------------------------

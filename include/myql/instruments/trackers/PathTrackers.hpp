@@ -126,31 +126,57 @@ struct TrackerLookback {
 };
 
 // =============================================================================
-// 5. BARRIER TRACKER
+// 5. BARRIER TRACKER (Equivalent Barrier Method)
 // =============================================================================
-// Tracks if a specific barrier level is breached and records the exact hit
-// time.
 template <bool IsUpBarrier> struct TrackerBarrier {
   static constexpr bool is_path_dependent = true;
 
   struct ExtraState {
     double current_time;
-    double hit_time;
-    bool is_hit;
+
+    // Track all three scenarios simultaneously!
+    bool is_hit_base, is_hit_up, is_hit_dn;
+    double hit_time_base, hit_time_up, hit_time_dn;
   };
+
   struct Config {
-    double barrier_log;
+    double barrier_log_base;
+    double barrier_log_up;
+    double barrier_log_dn;
   };
 
   template <typename State>
   static inline void init(State &s, const Config &cfg, double logS0, double) {
     s.current_time = 0.0;
-    s.hit_time = 0.0;
-    // Check if we start already breached (unlikely, but mathematically safe)
+
+    s.is_hit_base = false;
+    s.hit_time_base = 0.0;
+    s.is_hit_up = false;
+    s.hit_time_up = 0.0;
+    s.is_hit_dn = false;
+    s.hit_time_dn = 0.0;
+
+    // Check Day 0 breaches
     if constexpr (IsUpBarrier) {
-      s.is_hit = (logS0 >= cfg.barrier_log);
+      if (logS0 >= cfg.barrier_log_base) {
+        s.is_hit_base = true;
+      }
+      if (logS0 >= cfg.barrier_log_up) {
+        s.is_hit_up = true;
+      }
+      if (logS0 >= cfg.barrier_log_dn) {
+        s.is_hit_dn = true;
+      }
     } else {
-      s.is_hit = (logS0 <= cfg.barrier_log);
+      if (logS0 <= cfg.barrier_log_base) {
+        s.is_hit_base = true;
+      }
+      if (logS0 <= cfg.barrier_log_up) {
+        s.is_hit_up = true;
+      }
+      if (logS0 <= cfg.barrier_log_dn) {
+        s.is_hit_dn = true;
+      }
     }
   }
 
@@ -158,17 +184,76 @@ template <bool IsUpBarrier> struct TrackerBarrier {
   static inline void update(State &s, const Config &cfg, double dt) {
     s.current_time += dt;
 
-    // Only check if we haven't hit it yet
-    if (!s.is_hit) {
-      if constexpr (IsUpBarrier) {
-        if (s.logS >= cfg.barrier_log) {
-          s.is_hit = true;
-          s.hit_time = s.current_time;
+    /* if constexpr (IsUpBarrier) {
+      if (!s.is_hit_base && s.logS >= cfg.barrier_log_base) {
+        s.is_hit_base = true;
+        s.hit_time_base = s.current_time;
+      }
+      if (!s.is_hit_up && s.logS >= cfg.barrier_log_up) {
+        s.is_hit_up = true;
+        s.hit_time_up = s.current_time;
+      }
+      if (!s.is_hit_dn && s.logS >= cfg.barrier_log_dn) {
+        s.is_hit_dn = true;
+        s.hit_time_dn = s.current_time;
+      }
+    } else {
+      if (!s.is_hit_base && s.logS <= cfg.barrier_log_base) {
+        s.is_hit_base = true;
+        s.hit_time_base = s.current_time;
+      }
+      if (!s.is_hit_up && s.logS <= cfg.barrier_log_up) {
+        s.is_hit_up = true;
+        s.hit_time_up = s.current_time;
+      }
+      if (!s.is_hit_dn && s.logS <= cfg.barrier_log_dn) {
+        s.is_hit_dn = true;
+        s.hit_time_dn = s.current_time;
+      }
+    } */
+
+    if constexpr (IsUpBarrier) {
+      // 1. GATEKEEPER: Easiest barrier (Lowest log-price)
+      if (s.logS >= cfg.barrier_log_up) {
+        if (!s.is_hit_up) {
+          s.is_hit_up = true;
+          s.hit_time_up = s.current_time;
         }
-      } else {
-        if (s.logS <= cfg.barrier_log) {
-          s.is_hit = true;
-          s.hit_time = s.current_time;
+        // 2. MIDDLE BARRIER: Only check if it passed the first!
+        if (s.logS >= cfg.barrier_log_base) {
+          if (!s.is_hit_base) {
+            s.is_hit_base = true;
+            s.hit_time_base = s.current_time;
+          }
+          // 3. HARDEST BARRIER: Only check if it passed the middle!
+          if (s.logS >= cfg.barrier_log_dn) {
+            if (!s.is_hit_dn) {
+              s.is_hit_dn = true;
+              s.hit_time_dn = s.current_time;
+            }
+          }
+        }
+      }
+    } else {
+      // 1. GATEKEEPER: Easiest barrier (Highest log-price)
+      if (s.logS <= cfg.barrier_log_dn) {
+        if (!s.is_hit_dn) {
+          s.is_hit_dn = true;
+          s.hit_time_dn = s.current_time;
+        }
+        // 2. MIDDLE BARRIER: Only check if it passed the first!
+        if (s.logS <= cfg.barrier_log_base) {
+          if (!s.is_hit_base) {
+            s.is_hit_base = true;
+            s.hit_time_base = s.current_time;
+          }
+          // 3. HARDEST BARRIER: Only check if it passed the middle!
+          if (s.logS <= cfg.barrier_log_up) {
+            if (!s.is_hit_up) {
+              s.is_hit_up = true;
+              s.hit_time_up = s.current_time;
+            }
+          }
         }
       }
     }
@@ -176,6 +261,6 @@ template <bool IsUpBarrier> struct TrackerBarrier {
 
   template <typename State>
   static inline void finalize(State &s, const Config &, double, double) {
-    s.logS = std::exp(s.logS); // Convert terminal log spot to Price
+    s.logS = std::exp(s.logS);
   }
 };

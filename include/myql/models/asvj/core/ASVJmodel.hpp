@@ -11,9 +11,12 @@
 
 // A. Zero Factor Models (GBM, Merton, Kou)
 // ----------------------------------------
-template <typename JumpParamType> struct ZeroFactorModel {
-  double sigma;
+template <typename JumpParamType = NoJumpParams> struct ZeroFactorModel {
+  double vol;
   JumpParamType jump;
+
+  ZeroFactorModel(double v, const JumpParamType &j = JumpParamType{})
+      : vol(v), jump(j) {}
 };
 
 // B. Single Factor Models (Heston, Bates)

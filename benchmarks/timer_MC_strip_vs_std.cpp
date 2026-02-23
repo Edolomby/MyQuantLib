@@ -3,12 +3,12 @@
 #include <string>
 #include <vector>
 
-// ENGINES & MODELS
-#include <myql/engines/montecarlo/MonteCarloEngine.hpp>
+// PRICERS & MODELS
 #include <myql/models/asvj/core/ASVJmodel.hpp>
 #include <myql/models/asvj/core/ASVJstepper.hpp>
 #include <myql/models/asvj/policies/JumpPolicies.hpp>
 #include <myql/models/asvj/policies/VolSchemes.hpp>
+#include <myql/pricers/montecarlo/MonteCarloPricer.hpp>
 
 // INSTRUMENTS
 #include <myql/instruments/Payoffs.hpp>
@@ -51,21 +51,22 @@ void run_benchmark(const std::string &label, const Model &model,
   for (double K : strikes) {
     using Inst = EuropeanOption<PayoffVanilla<OptionType::Call>>;
     Inst opt(K, T);
-    MonteCarloEngine<Model, Stepper, Inst> engine(model, cfg);
+    MonteCarloPricer<Model, Stepper, Inst> engine(model, cfg);
     auto res = engine.calculate(S0, r, q, opt);
-    [[maybe_unused]] volatile double dummy = res.first; // Prevent optimization
+    [[maybe_unused]] volatile double dummy = res.price; // Prevent optimization
   }
   auto end_std = high_resolution_clock::now();
   double t_std = duration<double>(end_std - start_std).count();
 
   // --- 2. STRIP APPROACH (1 vectorized call using the Buffer Pattern) ---
   auto start_strip = high_resolution_clock::now();
-  using Strip = EuropeanStrip<PayoffVanilla<OptionType::Call>>;
+  using Strip =
+      EuropeanOption<PayoffVanilla<OptionType::Call>, std::vector<double>>;
   Strip strip(strikes, T);
-  MonteCarloEngine<Model, Stepper, Strip> engine_strip(model, cfg);
+  MonteCarloPricer<Model, Stepper, Strip> engine_strip(model, cfg);
   auto res_strip = engine_strip.calculate(S0, r, q, strip);
   [[maybe_unused]] volatile double dummy2 =
-      res_strip.first[0]; // Prevent optimization
+      res_strip.price[0]; // Prevent optimization
   auto end_strip = high_resolution_clock::now();
   double t_strip = duration<double>(end_strip - start_strip).count();
 
