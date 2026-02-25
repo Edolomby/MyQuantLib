@@ -56,6 +56,12 @@ MyQuantLib implements the **Affine Stochastic Volatility and Jumps (ASVJ)** fram
 - **Boost 1.84+** (introduces `xoshiro256++` fast RNG via `<boost/random/xoshiro.hpp>`)
 - **Eigen3** 3.3+ (for linear algebra operations)
 
+> **⚠️ *Important Note for Windows / Visual Studio Users (OpenMP)** > Microsoft Visual Studio's default OpenMP implementation is currently limited to an older standard (OpenMP 2.0). Because MyQuantLib uses modern parallel features for its Monte Carlo engine, compiling with the default MSVC toolset may cause issues.  
+> **To compile successfully on Windows, please use one of the following:**
+> 1. **Clang-cl (Recommended):** Inside Visual Studio, change your Platform Toolset to `LLVM (clang-cl)`. This provides full modern C++20 and OpenMP support natively within the IDE.
+> 2. **New MSVC LLVM Flag:** If using a recent MSVC version, pass the `/openmp:llvm` compiler flag instead of the standard `/openmp` flag.
+> 3. **GCC / Clang:** Compile using WSL (Windows Subsystem for Linux) or MSYS2/MinGW.
+
 ### Building the Benchmarks
 
 MyQuantLib is header-only, so to use it in your code, simply include the `include/myql` directory. To explore the codebase organization, please see the [Project Structure Overview](project_structure.md).
