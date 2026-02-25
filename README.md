@@ -59,7 +59,7 @@ MyQuantLib implements the **Affine Stochastic Volatility and Jumps (ASVJ)** fram
 MyQuantLib is header-only, so to use it in your code, simply include the `include/myql` directory. However, you can compile the comprehensive benchmark suite:
 
 ```bash
-git clone https://github.com/yourusername/MyQuantLib.git
+git clone https://github.com/Edolomby/MyQuantLib.git
 cd MyQuantLib
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
@@ -126,4 +126,4 @@ This architecture translates a potentially very complex web of `if-else` rules a
 - Integration of **Payoff Smoothing** to accurately compute Monte Carlo Greeks on discontinuous digital payoffs without finite-difference boundary issues.
 - Integration of full Volatility Surfaces and Yield Curves.
 - Implementation of a generalized **Calibration Module** to fit ASVJ models to market data.
-- Integration of advanced acceleration techniques: **Richardson-Romberg extrapolation**, **Random grids**, **Multilevel Monte Carlo (MLMC)**, and **Multi Level Richardson-Romberg extrapolation  (ML2R)** methods.
+- Integration of advanced acceleration techniques: **Richardson-Romberg extrapolation**, **Random grids**, **Multilevel Monte Carlo (MLMC)**, and **MultiLevel Richardson-Romberg extrapolation  (ML2R)** methods.

@@ -34,7 +34,7 @@ template <typename T> struct FourierResult<GreekMode::Full, T> {
 };
 
 // =============================================================================
-// MONTE CARLO RESULT STRUCTS (Templated on T to support double and std::vector)
+// MONTE CARLO RESULT STRUCTS (T = double or std::vector)
 // =============================================================================
 template <GreekMode Mode, typename T> struct MonteCarloResult;
 
