@@ -77,7 +77,9 @@ Run a benchmark, for example:
 
 ```cpp
 #include <iostream>
+#include <cmath>
 #include <myql/pricers/montecarlo/MonteCarloPricer.hpp>
+#include <myql/pricers/fourier/FourierPricer.hpp>
 #include <myql/models/asvj/core/ASVJmodel.hpp>
 #include <myql/models/asvj/core/ASVJstepper.hpp>
 #include <myql/instruments/options/European.hpp>
@@ -93,20 +95,28 @@ int main() {
     using CallVanilla = EuropeanOption<PayoffVanilla<OptionType::Call>>;
     CallVanilla option(strike, maturity);
 
-    // 3. Configure Monte Carlo limits
+    double spot = 100.0, rate = 0.05, dividend = 0.02;
+
+    // 3. Monte Carlo Pricing
     MonteCarloConfig mc_cfg;
     mc_cfg.num_paths = 100000;
     mc_cfg.time_steps = 100;
     
-    // 4. Setup the Pricer
     using Stepper = ASVJStepper<SchemeExact, NullVolScheme, NoJumps, TrackerEuropean>;
-    MonteCarloPricer<HestonModel, Stepper, CallVanilla> pricer(model, mc_cfg);
+    MonteCarloPricer<HestonModel, Stepper, CallVanilla> mc_pricer(model, mc_cfg);
+    auto mc_res = mc_pricer.calculate(spot, rate, dividend, option);
 
-    // 5. Calculate!
-    double spot = 100.0, rate = 0.05, dividend = 0.02;
-    auto result = pricer.calculate(spot, rate, dividend, option);
+    // 4. Fourier Pricing (Analytical)
+    FourierPricer<HestonModel, CallVanilla> fourier_pricer(model);
+    auto fourier_res = fourier_pricer.calculate(spot, rate, dividend, option);
 
-    std::cout << "Price: " << result.price << std::endl;
+    // 5. Compare Results (Z-Score)
+    double z_score = std::abs(mc_res.price - fourier_res.price) / mc_res.price_std_err;
+
+    std::cout << "MC Price:      " << mc_res.price << " ± " << mc_res.price_std_err << "\n";
+    std::cout << "Fourier Price: " << fourier_res.price << "\n";
+    std::cout << "Z-Score:       " << z_score << "\n";
+    
     return 0;
 }
 ```
