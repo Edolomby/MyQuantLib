@@ -43,7 +43,6 @@ inline double adaptive_simpson_impl(const Func &f, double a, double b,
   // Richardson Extrapolation: Error is approx (S2 - S) / 15
   if (depth <= 0 || std::abs(S2 - S) <= 15.0 * eps) {
     // Return the refined value + Richardson correction
-    // This gives us O(h^6) accuracy locally.
     return S2 + (S2 - S) * (1.0 / 15.0);
   }
 

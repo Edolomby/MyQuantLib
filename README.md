@@ -39,7 +39,7 @@ MyQuantLib implements the **Affine Stochastic Volatility and Jumps (ASVJ)** fram
   - The integration scheme for the log-asset process is always fixed, while the user has the flexibility to choose high-order schemes for the underlying CIR volatility process, including **Exact**, **NV**, and **NCI**.
   - Both the exact scheme (`SchemeExact`) and quasi-exact NCI scheme (`SchemeNCI`) rely on the property that a non-central chi-squared distribution can be represented as a mixture of Gamma and Chi-squared distributions weighted by a Poisson distribution. However, the parameters of this mixture become arbitrarily large if the volatility of variance ($\sigma$) and the time step ($\Delta t$) are both very small.
   - Therefore, the **NCI** scheme is generally superior (being faster and quasi-exact) to the **Exact** simulation unless the time step $\Delta t = T/N << 10^{-2}$.
-  - Crucially, whenever the "weak" Feller condition is satisfied ($\sigma^2 \le 4\kappa\theta$), the Ninomiya-Victoir scheme (`SchemeNV`) should be strictly preferred to avoid the aforementioned mixture degradation.
+  - Crucially, whenever the "weak" Feller condition is satisfied ($\sigma^2 \le 4\kappa\theta$), the Ninomiya-Victoir scheme (`SchemeNV`) should be strictly preferred. Not only does it avoid the aforementioned mixture degradation, but it is also the **fastest** exact scheme available, requiring only a single Gaussian draw per time step.
   - *Note: These advanced simulation schemes for the Log-Heston process have been developed and analyzed in the joint work by A. Alfonsi and E. Lombardo. For theoretical details and convergence proofs, please refer to:*
     > **High Order Approximations and Simulation Schemes for the Log-Heston Process**  
     > *SIAM Journal on Financial Mathematics* ([DOI: 10.1137/24M1679720](https://epubs.siam.org/doi/10.1137/24M1679720)) | [arXiv Preprint](https://arxiv.org/abs/2407.17151)
@@ -58,7 +58,9 @@ MyQuantLib implements the **Affine Stochastic Volatility and Jumps (ASVJ)** fram
 
 ### Building the Benchmarks
 
-MyQuantLib is header-only, so to use it in your code, simply include the `include/myql` directory. However, you can compile the comprehensive benchmark suite:
+MyQuantLib is header-only, so to use it in your code, simply include the `include/myql` directory. To explore the codebase organization, please see the [Project Structure Overview](project_structure.md).
+
+However, you can compile the comprehensive benchmark suite:
 
 ```bash
 git clone https://github.com/Edolomby/MyQuantLib.git
@@ -73,7 +75,9 @@ Run a benchmark, for example:
 ./EssentialGreekTest
 ```
 
-### Usage Example
+### Example 1: Vanilla Pricing (Symmetric API)
+
+This example demonstrates how to price a Vanilla Call using both the Monte Carlo and Fourier engines, comparing their results.
 
 ```cpp
 #include <iostream>
@@ -118,6 +122,85 @@ int main() {
     std::cout << "Z-Score:       " << z_score << "\n";
     
     return 0;
+}
+```
+
+### Example 2: Exotic Options (Vectorized Asian & Lookback)
+
+This example demonstrates how to evaluate a **strip** of fixed-strike Asian options simultaneously, alongside a floating-strike Lookback option.
+
+```cpp
+#include <iostream>
+#include <vector>
+#include <myql/pricers/montecarlo/MonteCarloPricer.hpp>
+#include <myql/models/asvj/core/ASVJmodel.hpp>
+#include <myql/models/asvj/core/ASVJstepper.hpp>
+#include <myql/instruments/options/Asian.hpp>
+#include <myql/instruments/options/Lookback.hpp>
+
+int main() {
+    HestonModel model({2.5, 0.06, 0.4, -0.7, 0.05});
+    MonteCarloConfig mc_cfg{100000, 100, 42}; 
+    double S0 = 100.0, r = 0.05, q = 0.0;
+
+    // A. Strip of Geometric Asian Calls (Strikes: 90, 100, 110)
+    std::vector<double> strikes = {S0 * 0.9, S0, S0 * 1.1};
+    using GeoAsianStrip = AsianOption<TrackerGeoAsian, PayoffVanilla<OptionType::Call>, true, std::vector<double>>;
+    GeoAsianStrip asian_strip(strikes, 1.0);
+
+    using AsianStepper = ASVJStepper<SchemeExact, NullVolScheme, NoJumps, TrackerGeoAsian>;
+    MonteCarloPricer<HestonModel, AsianStepper, GeoAsianStrip> asian_pricer(model, mc_cfg);
+    
+    auto asian_res = asian_pricer.calculate(S0, r, q, asian_strip);
+    std::cout << "Asian Call (K=90):  " << asian_res.price[0] << "\n"
+              << "Asian Call (K=100): " << asian_res.price[1] << "\n"
+              << "Asian Call (K=110): " << asian_res.price[2] << "\n";
+
+    // B. Floating Strike Lookback Put: Payoff = max(S_max - S_T, 0)
+    double dummy_strike = 0.0;
+    using LookbackPut = LookbackOption<PayoffVanilla<OptionType::Put>, false, double>;
+    LookbackPut lookback(dummy_strike, 1.0);
+
+    using LookbackStepper = ASVJStepper<SchemeExact, NullVolScheme, NoJumps, TrackerLookback>;
+    MonteCarloPricer<HestonModel, LookbackStepper, LookbackPut> lb_pricer(model, mc_cfg);
+    
+    auto lb_res = lb_pricer.calculate(S0, r, q, lookback);
+    std::cout << "Floating Lookback Put: " << lb_res.price << "\n";
+
+    return 0;
+}
+```
+
+### Example 3: Essential Greeks Calculation
+
+By upgrading the `GreekMode` template parameter, the engines automatically accumulate and return pathwise derivatives.
+
+```cpp
+#include <iostream>
+#include <myql/pricers/montecarlo/MonteCarloPricer.hpp>
+#include <myql/pricers/fourier/FourierPricer.hpp>
+
+using namespace myql;
+
+// Assumes 'model' and 'option' from Example 1
+void calculate_greeks(const HestonModel& model, const CallVanilla& option) {
+    double S0 = 100.0, r = 0.05, q = 0.02;
+    MonteCarloConfig mc_cfg{200000, 100, 42};
+
+    // Calculate MC Greeks
+    using Stepper = ASVJStepper<SchemeExact, NullVolScheme, NoJumps, TrackerEuropean>;
+    MonteCarloPricer<HestonModel, Stepper, CallVanilla, GreekMode::Essential> mc_pricer(model, mc_cfg);
+    auto res_mc = mc_pricer.calculate(S0, r, q, option);
+
+    std::cout << "MC Delta: " << res_mc.delta << " ± " << res_mc.delta_std_err << "\n";
+    std::cout << "MC Gamma: " << res_mc.gamma << " ± " << res_mc.gamma_std_err << "\n";
+
+    // Calculate Analytical Fourier Greeks
+    FourierPricer<HestonModel, CallVanilla, GreekMode::Essential> fourier_pricer(model);
+    auto res_fourier = fourier_pricer.calculate(S0, r, q, option);
+
+    std::cout << "Analytical Delta: " << res_fourier.delta << "\n";
+    std::cout << "Analytical Gamma: " << res_fourier.gamma << "\n";
 }
 ```
 
