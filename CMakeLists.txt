@@ -26,9 +26,13 @@ endif()
 find_package(OpenMP REQUIRED)
 
 # B. Boost (Random Numbers)
-# We request 1.80 or newer to ensure xoshiro support
-set(BOOST_ROOT "/home/edoardolombardo/Documents/codes/MyQuantLib/boost_1_90_0")
-find_package(Boost 1.90.0 REQUIRED)
+# xoshiro256++ was introduced in Boost 1.84.0
+# If a local Boost bundle exists at the repo root, prefer it;
+# otherwise CMake will search system paths or a user-supplied -DBOOST_ROOT=...
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/boost_1_90_0")
+    set(BOOST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/boost_1_90_0")
+endif()
+find_package(Boost 1.84.0 REQUIRED)
 
 # C. Eigen (Linear Algebra)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
