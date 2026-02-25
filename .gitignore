@@ -42,4 +42,3 @@ boost_1_90_0/
 # Ignore editor/tool caches
 .cache/
 .vscode/
-build/

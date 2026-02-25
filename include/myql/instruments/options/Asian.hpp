@@ -11,9 +11,20 @@ class AsianOption {
   double T_;
   PayoffT payoff_func_;
 
-  static constexpr bool is_scalar = std::is_floating_point_v<StrikeContainer>;
+  // Historical state for in-flight options (option started before today).
+  // These store the **observed averages** over [t_past, t_0]:
+  //   past_avg_log_ = average of log(S)  (e.g. exp(past_avg_log_) = geo-avg)
+  //   past_avg_S_   = arithmetic average of S
+  //   t_elapsed_    = calendar time already elapsed
+  // The tracker's init() reconstructs the partial integral as avg * t_elapsed.
+  double past_avg_log_ = 0.0;
+  double past_avg_S_ = 0.0;
+  double t_elapsed_ = 0.0;
 
-  // Helper to compute payoff based on strike type //prevent to many ifs
+  static constexpr bool is_scalar = std::is_floating_point_v<StrikeContainer>;
+  static constexpr bool is_arith = std::is_same_v<TrackerT, TrackerArithAsian>;
+
+  // Helper to compute payoff based on strike type
   inline double compute_payoff(double spot_scaled, double avg_scaled,
                                double K) const {
     if constexpr (FixedStrike) {
@@ -28,13 +39,40 @@ public:
   using ResultType = StrikeContainer;
   using PayoffType = PayoffT;
 
-  AsianOption(StrikeContainer &K, double T) : strikes_(K), T_(T) {}
+  // ── Default: fresh option starting today ──────────────────────────────────
+  AsianOption(const StrikeContainer &K, double T) : strikes_(K), T_(T) {}
+
+  // ── In-flight GeoAsian ─────────────────────────────────────────────────────
+  // past_avg_log: observed average of log(S) over the elapsed period
+  // t_elapsed:    calendar time between option start date and today
+  AsianOption(const StrikeContainer &K, double T, double past_avg_log,
+              double t_elapsed)
+      : strikes_(K), T_(T), past_avg_log_(past_avg_log), t_elapsed_(t_elapsed) {
+  }
+
+  // ── In-flight ArithAsian ───────────────────────────────────────────────────
+  // past_avg_S:   observed arithmetic average of S  over the elapsed period
+  // past_avg_log: observed average of log(S)         over the elapsed period
+  // t_elapsed:    calendar time between option start date and today
+  AsianOption(const StrikeContainer &K, double T, double past_avg_S,
+              double past_avg_log, double t_elapsed)
+      : strikes_(K), T_(T), past_avg_log_(past_avg_log),
+        past_avg_S_(past_avg_S), t_elapsed_(t_elapsed) {}
 
   template <GreekMode Mode = GreekMode::None>
   typename Tracker::Config
   get_tracker_config([[maybe_unused]] double S0 = 100.0,
                      [[maybe_unused]] double h = 0.0) const {
-    return {};
+    typename Tracker::Config cfg;
+    cfg.t_elapsed = t_elapsed_;
+    if constexpr (is_arith) {
+      cfg.past_avg_log = past_avg_log_;
+      cfg.past_avg_S = past_avg_S_;
+    } else {
+      // GeoAsian (or any single-integral tracker)
+      cfg.past_avg_log = past_avg_log_;
+    }
+    return cfg;
   }
 
   template <GreekMode Mode, typename State>

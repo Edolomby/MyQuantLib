@@ -33,8 +33,10 @@ void run_pricing_task(const std::string &model_str,
 
   // 2. DISPATCH REGISTRY: Build Variants at Runtime
   AnyModel model = build_model(model_str, m_params);
-  AnyInstrument instrument =
+  AnyMCInstrument mc_instr =
       build_instrument(instr_str, option_type_str, i_params);
+  AnyEuropeanInstrument f_instr =
+      build_european(instr_str, option_type_str, i_params);
 
   // 3. Configure Engines
   MonteCarloConfig mc_cfg;
@@ -47,10 +49,10 @@ void run_pricing_task(const std::string &model_str,
 
   // 4. PRICE! (The magic double-dispatch mapping to compiled temples)
   // We explicitly ask to compute Essential Greeks via Monte Carlo
-  auto mc_res = price_mc<GreekMode::Essential, SchemeNCI>(model, instrument,
+  auto mc_res = price_mc<GreekMode::Essential, SchemeNCI>(model, mc_instr,
                                                           mc_cfg, S0, r, q);
   auto f_res =
-      price_fourier<GreekMode::Essential>(model, instrument, f_cfg, S0, r, q);
+      price_fourier<GreekMode::Essential>(model, f_instr, f_cfg, S0, r, q);
 
   // 5. Print Results
   std::cout << "\nResults for " << strikes.size() << " strikes:\n";
@@ -112,7 +114,8 @@ int main() {
     i_params.maturity = T;
 
     AnyModel dynamic_model = build_model("Heston", m_params);
-    AnyInstrument dynamic_instr = build_instrument("Vanilla", "Call", i_params);
+    AnyEuropeanInstrument dynamic_instr =
+        build_european("Vanilla", "Call", i_params);
 
     auto t3 = std::chrono::high_resolution_clock::now();
     double dynamic_sum = 0.0;

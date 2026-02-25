@@ -34,11 +34,21 @@ struct TrackerGeoAsian {
   struct ExtraState {
     double sumLogS; // Accumulator for \int log(S_t) dt
   };
-  struct Config {}; // We could add forward_start_time later
+
+  // Config carries optional historical state for in-flight options.
+  // past_avg_log  = observed average of log(S) over [t_past, t_0]  (0 if new)
+  // t_elapsed     = time already elapsed since the option started   (0 if new)
+  // init() reconstructs the partial integral as: past_avg_log * t_elapsed
+  struct Config {
+    double past_avg_log = 0.0; // observed average of log(S) over elapsed period
+    double t_elapsed = 0.0;    // elapsed time before today
+  };
 
   template <typename State>
-  static inline void init(State &s, const Config &, double, double dt) {
-    s.sumLogS = 0.5 * s.logS * dt;
+  static inline void init(State &s, const Config &cfg, double, double dt) {
+    // Reconstruct \int log(S) dt from the observed average, then open the
+    // first half-step of the future simulation leg.
+    s.sumLogS = cfg.past_avg_log * cfg.t_elapsed + 0.5 * s.logS * dt;
   }
 
   template <typename State>
@@ -47,11 +57,15 @@ struct TrackerGeoAsian {
   }
 
   template <typename State>
-  static inline void finalize(State &s, const Config &, double dt, double T) {
+  static inline void finalize(State &s, const Config &cfg, double dt,
+                              double T) {
     // Trapezoidal correction for better convergence
     s.sumLogS -= 0.5 * s.logS * dt;
-    s.sumLogS = std::exp(s.sumLogS / T);
-    s.logS = std::exp(s.logS); // Convert to prize used in floating strike payff
+    // Total averaging window is T_residual + t_elapsed
+    const double T_total = T + cfg.t_elapsed;
+    s.sumLogS = std::exp(s.sumLogS / T_total);
+    s.logS =
+        std::exp(s.logS); // Convert to price used in floating strike payoff
   }
 };
 
@@ -67,12 +81,22 @@ struct TrackerArithAsian {
     double sumLogS; // For Control Variate (Geometric Average)
     double sumS;    // For Payoff (Arithmetic Average)
   };
-  struct Config {}; // We could add forward_start_time later
+
+  // Config carries optional historical state for in-flight options.
+  // past_avg_log = observed average of log(S)  over [t_past, t_0]  (0 if new)
+  // past_avg_S   = observed arithmetic average of S over [t_past, t_0] (0 if
+  // new) t_elapsed    = elapsed time before today (0 if new)
+  // init() reconstructs partial integrals as: past_avg_* * t_elapsed
+  struct Config {
+    double past_avg_log = 0.0;
+    double past_avg_S = 0.0;
+    double t_elapsed = 0.0;
+  };
 
   template <typename State>
-  static inline void init(State &s, const Config &, double, double dt) {
-    s.sumLogS = 0.5 * s.logS * dt;
-    s.sumS = 0.5 * std::exp(s.logS) * dt;
+  static inline void init(State &s, const Config &cfg, double, double dt) {
+    s.sumLogS = cfg.past_avg_log * cfg.t_elapsed + 0.5 * s.logS * dt;
+    s.sumS = cfg.past_avg_S * cfg.t_elapsed + 0.5 * std::exp(s.logS) * dt;
   }
 
   template <typename State>
@@ -82,13 +106,16 @@ struct TrackerArithAsian {
   }
 
   template <typename State>
-  static inline void finalize(State &s, const Config &, double dt, double T) {
+  static inline void finalize(State &s, const Config &cfg, double dt,
+                              double T) {
     // Trapezoidal correction for better convergence
     s.sumLogS -= 0.5 * s.logS * dt;
     s.sumS -= 0.5 * std::exp(s.logS) * dt;
-    s.sumLogS = std::exp(s.sumLogS / T);
-    s.sumS = s.sumS / T;
-    s.logS = std::exp(s.logS); // Convert to prize used in floating strike payff
+    const double T_total = T + cfg.t_elapsed;
+    s.sumLogS = std::exp(s.sumLogS / T_total);
+    s.sumS = s.sumS / T_total;
+    s.logS =
+        std::exp(s.logS); // Convert to price used in floating strike payoff
   }
 };
 
@@ -103,12 +130,20 @@ struct TrackerLookback {
     double minLogS;
     double maxLogS;
   };
-  struct Config {}; // We could add forward_start_time later
+
+  // Config carries optional historical extremes for in-flight options.
+  // hist_min_logS = log(S_min) observed before today (+inf  → use log(S0))
+  // hist_max_logS = log(S_max) observed before today (-inf  → use log(S0))
+  struct Config {
+    double hist_min_logS = +1e300; // sentinel: not set
+    double hist_max_logS = -1e300; // sentinel: not set
+  };
 
   template <typename State>
-  static inline void init(State &s, const Config &, double logS0, double) {
-    s.minLogS = logS0;
-    s.maxLogS = logS0;
+  static inline void init(State &s, const Config &cfg, double logS0, double) {
+    // If history was provided, pre-seed min/max from it; otherwise use S0.
+    s.minLogS = (cfg.hist_min_logS < 1e300) ? cfg.hist_min_logS : logS0;
+    s.maxLogS = (cfg.hist_max_logS > -1e300) ? cfg.hist_max_logS : logS0;
   }
 
   template <typename State>
@@ -126,7 +161,7 @@ struct TrackerLookback {
 };
 
 // =============================================================================
-// 5. BARRIER TRACKER (Equivalent Barrier Method)
+// 5. BARRIER TRACKER
 // =============================================================================
 template <bool IsUpBarrier> struct TrackerBarrier {
   static constexpr bool is_path_dependent = true;

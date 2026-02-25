@@ -108,7 +108,12 @@ public:
     }
   }
 
-  size_t size() const { return is_scalar ? 1 : strikes_.size(); }
+  size_t size() const {
+    if constexpr (is_scalar)
+      return 1;
+    else
+      return strikes_.size();
+  }
   double get_maturity() const { return T_; }
   double get_barrier() const { return barrier_; }
 };

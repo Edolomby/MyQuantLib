@@ -1,4 +1,5 @@
 #pragma once
+#include <cmath>
 #include <myql/core/PricingTypes.hpp>
 #include <myql/instruments/Payoffs.hpp>
 #include <myql/instruments/trackers/PathTrackers.hpp>
@@ -10,14 +11,22 @@ class LookbackOption {
   double T_;
   PayoffT payoff_func_;
 
+  // Historical extremes observed before the pricing date.
+  // 0.0 means "not set" — the tracker will default to S0.
+  double hist_min_S_ = 0.0;
+  double hist_max_S_ = 0.0;
+
   static constexpr bool is_scalar = std::is_floating_point_v<StrikeContainer>;
 
-  // Helper to compute payoff based on strike type //prevent to many ifs
+  // Helper to compute payoff based on strike type
   inline double compute_payoff(double spot_scaled, double extreme_scaled,
                                double K) const {
     if constexpr (FixedStrike) {
       return payoff_func_(extreme_scaled, K);
     } else {
+      // Floating call: max(spot - extreme, 0) -> payoff_func_Call(spot,
+      // extreme) Floating put:  max(extreme - spot, 0) -> payoff_func_Put(spot,
+      // extreme)
       return payoff_func_(spot_scaled, extreme_scaled);
     }
   }
@@ -27,13 +36,22 @@ public:
   using ResultType = StrikeContainer;
   using PayoffType = PayoffT;
 
-  LookbackOption(const StrikeContainer &K, double T) : strikes_(K), T_(T) {}
+  // hist_min_S: observed minimum price over the elapsed period (0 = no history)
+  // hist_max_S: observed maximum price over the elapsed period (0 = no history)
+  LookbackOption(const StrikeContainer &K, double T, double hist_min_S = 0.0,
+                 double hist_max_S = 0.0)
+      : strikes_(K), T_(T), hist_min_S_(hist_min_S), hist_max_S_(hist_max_S) {}
 
   template <GreekMode Mode = GreekMode::None>
   typename Tracker::Config
   get_tracker_config([[maybe_unused]] double S0 = 100.0,
                      [[maybe_unused]] double h = 0.0) const {
-    return {};
+    Tracker::Config cfg;
+    if (hist_min_S_ > 0.0)
+      cfg.hist_min_logS = std::log(hist_min_S_);
+    if (hist_max_S_ > 0.0)
+      cfg.hist_max_logS = std::log(hist_max_S_);
+    return cfg;
   }
 
   template <GreekMode Mode, typename State>

@@ -29,19 +29,21 @@ MyQuantLib implements the **Affine Stochastic Volatility and Jumps (ASVJ)** fram
 
 - **Path-Independent (European)**: Vanilla (Call/Put), Cash-or-Nothing (Digital), Asset-or-Nothing (Digital).
 - **Path-Dependent**:
-  - **Asian**: Geometric, Arithmetic.
-  - **Lookback**: Continuous Fixed, Continuous Floating.
+  - **Asian**: Geometric, Arithmetic *(supports in-flight valuation via historical state)*.
+  - **Lookback**: Continuous Fixed, Continuous Floating *(supports in-flight valuation via historical state)*.
   - **Barrier**: Up-and-Out, Up-and-In, Down-and-Out, Down-and-In.
 
 ## 🧮 Pricing Engines & Numerical Schemes
 
 - **Monte Carlo Pricer**: Provides flexible `Stepper` configurations for the underlying stochastic differential equations.
-  - Supported high-order schemes for the volatility process include **Exact**, **NV**, and **NCI**.
-  - The **NCI** scheme is generally superior (being faster and quasi-exact) to the **Exact** simulation unless the time step $\Delta t = T/N << 10^{-2}$. The **NV** scheme is specifically recommended whenever the "weak" Feller condition is satisfied ($\sigma^2 \le 4\kappa\theta$).
+  - The integration scheme for the log-asset process is always fixed, while the user has the flexibility to choose high-order schemes for the underlying CIR volatility process, including **Exact**, **NV**, and **NCI**.
+  - Both the exact scheme (`SchemeExact`) and quasi-exact NCI scheme (`SchemeNCI`) rely on the property that a non-central chi-squared distribution can be represented as a mixture of Gamma and Chi-squared distributions weighted by a Poisson distribution. However, the parameters of this mixture become arbitrarily large if the volatility of variance ($\sigma$) and the time step ($\Delta t$) are both very small.
+  - Therefore, the **NCI** scheme is generally superior (being faster and quasi-exact) to the **Exact** simulation unless the time step $\Delta t = T/N << 10^{-2}$.
+  - Crucially, whenever the "weak" Feller condition is satisfied ($\sigma^2 \le 4\kappa\theta$), the Ninomiya-Victoir scheme (`SchemeNV`) should be strictly preferred to avoid the aforementioned mixture degradation.
   - *Note: These advanced simulation schemes for the Log-Heston process have been developed and analyzed in the joint work by A. Alfonsi and E. Lombardo. For theoretical details and convergence proofs, please refer to:*
     > **High Order Approximations and Simulation Schemes for the Log-Heston Process**  
     > *SIAM Journal on Financial Mathematics* ([DOI: 10.1137/24M1679720](https://epubs.siam.org/doi/10.1137/24M1679720)) | [arXiv Preprint](https://arxiv.org/abs/2407.17151)
-- **Fourier Pricer**: Employs Gil-Pelaez quadrature for lighting-fast analytical pricing and Greeks computation.
+- **Fourier Pricer**: Employs Gil-Pelaez quadrature for very fast analytical pricing and Greeks computation. The highly oscillatory integrals are resolved using a robust **adaptive Simpson's rule with Richardson extrapolation**, achieving high precision even under extreme parameters.
 
 ---
 
@@ -172,6 +174,11 @@ AnyInstrument instr = build_instrument("Vanilla", "Call", ip);
 | `Vanilla` | `Call` / `Put` | max(S−K, 0) / max(K−S, 0) |
 | `CashOrNothing` | `Call` / `Put` | $1 if ITM, else $0 |
 | `AssetOrNothing` | `Call` / `Put` | S if ITM, else $0 |
+| `GeoAsian` / `ArithAsian` | `Call` / `Put` | max(Avg−K, 0) / max(K−Avg, 0) |
+| `GeoAsianFloating` / `ArithAsianFloating` | `Call` / `Put` | max(S−Avg, 0) / max(Avg−S, 0) |
+| `LookbackFixed` | `Call` / `Put` | max(Extrema−K, 0) / max(K−Extrema, 0) |
+| `LookbackFloating` | `Call` / `Put` | max(S−Extrema, 0) / max(Extrema−S, 0) |
+| `UpAndOut` / `DownAndIn`... | `Call` / `Put` | Standard Barrier Payoffs |
 
 **4 — Price:**
 ```cpp
@@ -204,12 +211,12 @@ res.prices_std_err[i];   // MC only
 
 > **Stepper deduction is automatic** — `StepperTraits.hpp` inspects the model type to determine the number of CIR factors and jump policy, and wires the correct `ASVJStepper` template. You never specify it manually.
 
-> **Current scope:** `AnyInstrument` covers European-style payoffs only (Vanilla, Cash-or-Nothing, Asset-or-Nothing). Exotic instruments (Asian, Barrier, Lookback) are not yet registered — use the static template API directly for those.
+> **Current scope:** `AnyInstrument` covers both European-style payoffs (Vanilla, Cash-or-Nothing, Asset-or-Nothing) and Path-dependent Exotics (Asian, Barrier, Lookback). Note that Fourier pricing is strictly bound to European payoffs; routing an Exotic to `price_fourier` throws a runtime mismatch exception.
 
 ---
 
 ## 🔮 Next Steps / Future Work
 - Integration of **Payoff Smoothing** to accurately compute Monte Carlo Greeks on discontinuous digital payoffs without finite-difference boundary issues.
-- Integration of full Volatility Surfaces and Yield Curves.
+- Integration of Forward starting options.
 - Implementation of a generalized **Calibration Module** to fit ASVJ models to market data.
 - Integration of advanced acceleration techniques: **Richardson-Romberg extrapolation**, **Random grids**, **Multilevel Monte Carlo (MLMC)**, and **MultiLevel Richardson-Romberg extrapolation  (ML2R)** methods.

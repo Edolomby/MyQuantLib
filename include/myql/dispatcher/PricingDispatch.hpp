@@ -40,32 +40,39 @@ struct DispatchResult {
 template <typename EngineResult>
 DispatchResult format_dispatch_result(const EngineResult &res) {
   DispatchResult out;
-  out.prices = res.price;
 
-  // We check if GreekMode allows deltas and gammas
+  // ResultType can be double (scalar exotic) or vector<double> (European/Asian
+  // strip). DispatchResult always stores vector<double>, so wrap scalars in {}.
+  auto to_vec = [](const auto &v) -> std::vector<double> {
+    if constexpr (std::is_same_v<std::decay_t<decltype(v)>, double>)
+      return {v};
+    else
+      return v;
+  };
+
+  out.prices = to_vec(res.price);
+
   if constexpr (requires { res.delta; }) {
-    out.deltas = res.delta;
-    out.gammas = res.gamma;
+    out.deltas = to_vec(res.delta);
+    out.gammas = to_vec(res.gamma);
 
-    // Check if Full Greek mode fields exist (currently Fourier only)
     if constexpr (requires { res.vega; }) {
-      out.vegas = res.vega;
-      out.thetas = res.theta;
-      out.rhos = res.rho;
+      out.vegas = to_vec(res.vega);
+      out.thetas = to_vec(res.theta);
+      out.rhos = to_vec(res.rho);
     }
   }
 
-  // MC-specific error metrics
   if constexpr (requires { res.price_std_err; }) {
-    out.prices_std_err = res.price_std_err;
+    out.prices_std_err = to_vec(res.price_std_err);
     if constexpr (requires { res.delta_std_err; }) {
-      out.deltas_std_err = res.delta_std_err;
-      out.gammas_std_err = res.gamma_std_err;
+      out.deltas_std_err = to_vec(res.delta_std_err);
+      out.gammas_std_err = to_vec(res.gamma_std_err);
 
       if constexpr (requires { res.vega_std_err; }) {
-        out.vegas_std_err = res.vega_std_err;
-        out.thetas_std_err = res.theta_std_err;
-        out.rhos_std_err = res.rho_std_err;
+        out.vegas_std_err = to_vec(res.vega_std_err);
+        out.thetas_std_err = to_vec(res.theta_std_err);
+        out.rhos_std_err = to_vec(res.rho_std_err);
       }
     }
   }
@@ -77,7 +84,7 @@ DispatchResult format_dispatch_result(const EngineResult &res) {
 // =============================================================================
 template <GreekMode Mode = GreekMode::None,
           typename ExplicitVolScheme = SchemeNCI>
-DispatchResult price_mc(const AnyModel &m_var, const AnyInstrument &i_var,
+DispatchResult price_mc(const AnyModel &m_var, const AnyMCInstrument &i_var,
                         const MonteCarloConfig &cfg, double S0, double r,
                         double q) {
 
@@ -114,9 +121,9 @@ DispatchResult price_mc(const AnyModel &m_var, const AnyInstrument &i_var,
 // DISPATCH ENGINE: FOURIER
 // =============================================================================
 template <GreekMode Mode = GreekMode::None>
-DispatchResult price_fourier(const AnyModel &m_var, const AnyInstrument &i_var,
-                             const FourierEngine::Config &cfg, double S0,
-                             double r, double q) {
+DispatchResult
+price_fourier(const AnyModel &m_var, const AnyEuropeanInstrument &i_var,
+              const FourierEngine::Config &cfg, double S0, double r, double q) {
 
   return std::visit(
       [&](auto &m) -> DispatchResult {

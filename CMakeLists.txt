@@ -68,13 +68,14 @@ add_benchmark(BenchFourierMC benchmarks/benchmark_fourier_vs_mc.cpp)
 add_benchmark(TestSmile benchmarks/test_smile_suite.cpp)
 add_benchmark(TimerMCstrip benchmarks/timer_MC_strip_vs_std.cpp)
 add_benchmark(DigitalTest benchmarks/digital_verification.cpp)
-add_benchmark(ExoticConsistency benchmarks/exotic_consistency.cpp)
 add_benchmark(SplineTest benchmarks/spline_test.cpp)
 add_benchmark(CirTest benchmarks/cir_test.cpp)
 add_benchmark(BarrierTest benchmarks/barrier_test.cpp)
 add_benchmark(EssentialGreekTest benchmarks/EssentialGreekTest.cpp)
 add_benchmark(RuntimeDispatchDemo benchmarks/runtime_dispatch_demo.cpp)
 add_benchmark(AsianTest benchmarks/asian_test.cpp)
+add_benchmark(LookbackTest benchmarks/lookback_test.cpp)
+add_benchmark(InFlightTest benchmarks/in_flight_test.cpp)
 
 # ==============================================================================
 # 5. STATUS REPORT
