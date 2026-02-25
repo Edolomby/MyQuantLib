@@ -117,7 +117,7 @@ int main() {
     // 5. Compare Results (Z-Score)
     double z_score = std::abs(mc_res.price - fourier_res.price) / mc_res.price_std_err;
 
-    std::cout << "MC Price:      " << mc_res.price << " ± " << mc_res.price_std_err << "\n";
+    std::cout << "MC Price:      " << mc_res.price << " +- " << mc_res.price_std_err << "\n";
     std::cout << "Fourier Price: " << fourier_res.price << "\n";
     std::cout << "Z-Score:       " << z_score << "\n";
     
@@ -192,8 +192,8 @@ void calculate_greeks(const HestonModel& model, const CallVanilla& option) {
     MonteCarloPricer<HestonModel, Stepper, CallVanilla, GreekMode::Essential> mc_pricer(model, mc_cfg);
     auto res_mc = mc_pricer.calculate(S0, r, q, option);
 
-    std::cout << "MC Delta: " << res_mc.delta << " ± " << res_mc.delta_std_err << "\n";
-    std::cout << "MC Gamma: " << res_mc.gamma << " ± " << res_mc.gamma_std_err << "\n";
+    std::cout << "MC Delta: " << res_mc.delta << " +- " << res_mc.delta_std_err << "\n";
+    std::cout << "MC Gamma: " << res_mc.gamma << " +- " << res_mc.gamma_std_err << "\n";
 
     // Calculate Analytical Fourier Greeks
     FourierPricer<HestonModel, CallVanilla, GreekMode::Essential> fourier_pricer(model);
