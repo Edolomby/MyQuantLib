@@ -189,9 +189,9 @@ auto res = price_mc(model, instr, mc, S0, r, q);
 // Monte Carlo — price + Delta + Gamma, choosing the CIR vol scheme
 auto res = price_mc<GreekMode::Essential, SchemeExact>(model, instr, mc, S0, r, q);
 
-// Fourier — price + all Greeks (Delta, Gamma, Vega, Theta, Rho)
+// Fourier — price + analytical Greeks (Delta, Gamma)
 FourierEngine::Config fc; fc.tolerance = 1e-9;
-auto res = price_fourier<GreekMode::Full>(model, instr, fc, S0, r, q);
+auto res = price_fourier<GreekMode::Essential>(model, instr, fc, S0, r, q);
 ```
 
 | `ExplicitVolScheme` (MC only) | When to prefer |
@@ -205,7 +205,6 @@ auto res = price_fourier<GreekMode::Full>(model, instr, fc, S0, r, q);
 res.prices[i];           // always present
 res.deltas[i];           // GreekMode::Essential or ::Full
 res.gammas[i];           // GreekMode::Essential or ::Full
-res.vegas[i];            // Fourier + GreekMode::Full only
 res.prices_std_err[i];   // MC only
 ```
 
@@ -218,5 +217,8 @@ res.prices_std_err[i];   // MC only
 ## 🔮 Next Steps / Future Work
 - Integration of **Payoff Smoothing** to accurately compute Monte Carlo Greeks on discontinuous digital payoffs without finite-difference boundary issues.
 - Integration of Forward starting options.
+- Integration of Full Greek mode (Vega, Theta, Rho).
+- Integration of geometric Asian options in the Fourier engine.
+- Implementation of Control Variates for Monte Carlo and quasi-Monte Carlo.
 - Implementation of a generalized **Calibration Module** to fit ASVJ models to market data.
 - Integration of advanced acceleration techniques: **Richardson-Romberg extrapolation**, **Random grids**, **Multilevel Monte Carlo (MLMC)**, and **MultiLevel Richardson-Romberg extrapolation  (ML2R)** methods.
