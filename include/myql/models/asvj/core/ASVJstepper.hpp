@@ -170,7 +170,7 @@ public:
       if constexpr (NumCirs == 0) {
         double G_stock = Numerics::normcdfinv_as241(dist_uni(rng));
         auto &gbm = std::get<0>(diffusion_data_);
-        current_logS += gbm.drift_dt * dt_ + gbm.vol_dt * G_stock;
+        current_logS += gbm.drift_dt + gbm.vol_dt * G_stock;
       }
       // CASE 1: Single Factor
       else if constexpr (NumCirs == 1) {

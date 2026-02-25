@@ -122,6 +122,92 @@ This architecture translates a potentially very complex web of `if-else` rules a
 
 ---
 
+## 🔌 Runtime Dispatch Layer
+
+The library ships a thin **boundary layer** (`include/myql/dispatcher/`) that lets you select model, instrument, engine, and Greeks entirely at **runtime** — from strings, config files, or REST parameters — while the inner engine still executes the same **zero-overhead compiled templates**.
+
+A nested `std::visit` resolves the `AnyModel` and `AnyInstrument` variants at the call site and routes into exactly one compiled `MonteCarloPricer<Model, Stepper, Instrument>` or `FourierPricer<Model, Instrument>` — **no virtual calls, no heap allocation**.
+
+### Step-by-Step Usage
+
+**1 — One header:**
+```cpp
+#include <myql/dispatcher/PricingDispatch.hpp>
+using namespace myql::dispatcher;
+```
+
+**2 — Build model from a string:**
+```cpp
+RuntimeModelParams p;
+p.heston1 = {2.5, 0.06, 0.4, -0.7, 0.05};  // kappa, theta, sigma, rho, v0
+p.merton  = {1.2, -0.12, 0.15};             // lambda, mu_J, sigma_J (for Bates)
+p.vol     = 0.20;                            // flat vol (0-factor models only)
+
+AnyModel model = build_model("Heston", p);
+```
+
+| String | Model |
+|---|---|
+| `BlackScholes` | GBM, flat vol |
+| `Merton` | GBM + Merton jumps |
+| `Kou` | GBM + Kou double-exponential jumps |
+| `Heston` | Heston stochastic vol |
+| `Bates` | Heston + Merton jumps |
+| `BatesKou` | Heston + Kou jumps |
+| `DoubleHeston` | 2-factor Heston |
+| `DoubleBates` | 2-factor Heston + Merton |
+| `DoubleBatesKou` | 2-factor Heston + Kou |
+
+**3 — Build instrument from strings:**
+```cpp
+RuntimeInstrumentParams ip;
+ip.strikes  = {90.0, 100.0, 110.0};
+ip.maturity = 1.0;
+
+AnyInstrument instr = build_instrument("Vanilla", "Call", ip);
+```
+
+| `type` | `option_type` | Payoff |
+|---|---|---|
+| `Vanilla` | `Call` / `Put` | max(S−K, 0) / max(K−S, 0) |
+| `CashOrNothing` | `Call` / `Put` | $1 if ITM, else $0 |
+| `AssetOrNothing` | `Call` / `Put` | S if ITM, else $0 |
+
+**4 — Price:**
+```cpp
+// Monte Carlo — price only (default)
+MonteCarloConfig mc; mc.num_paths = 500000; mc.time_steps = 50;
+auto res = price_mc(model, instr, mc, S0, r, q);
+
+// Monte Carlo — price + Delta + Gamma, choosing the CIR vol scheme
+auto res = price_mc<GreekMode::Essential, SchemeExact>(model, instr, mc, S0, r, q);
+
+// Fourier — price + all Greeks (Delta, Gamma, Vega, Theta, Rho)
+FourierEngine::Config fc; fc.tolerance = 1e-9;
+auto res = price_fourier<GreekMode::Full>(model, instr, fc, S0, r, q);
+```
+
+| `ExplicitVolScheme` (MC only) | When to prefer |
+|---|---|
+| `SchemeNCI` *(default)* | Safe general-purpose choice |
+| `SchemeExact` | Standard Heston params, moderate dt |
+| `SchemeNV` | Valid only when σ² ≤ 4κθ (weak Feller) |
+
+**5 — Read results (unified `DispatchResult`):**
+```cpp
+res.prices[i];           // always present
+res.deltas[i];           // GreekMode::Essential or ::Full
+res.gammas[i];           // GreekMode::Essential or ::Full
+res.vegas[i];            // Fourier + GreekMode::Full only
+res.prices_std_err[i];   // MC only
+```
+
+> **Stepper deduction is automatic** — `StepperTraits.hpp` inspects the model type to determine the number of CIR factors and jump policy, and wires the correct `ASVJStepper` template. You never specify it manually.
+
+> **Current scope:** `AnyInstrument` covers European-style payoffs only (Vanilla, Cash-or-Nothing, Asset-or-Nothing). Exotic instruments (Asian, Barrier, Lookback) are not yet registered — use the static template API directly for those.
+
+---
+
 ## 🔮 Next Steps / Future Work
 - Integration of **Payoff Smoothing** to accurately compute Monte Carlo Greeks on discontinuous digital payoffs without finite-difference boundary issues.
 - Integration of full Volatility Surfaces and Yield Curves.

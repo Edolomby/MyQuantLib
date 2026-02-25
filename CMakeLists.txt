@@ -70,6 +70,7 @@ add_benchmark(CirTest benchmarks/cir_test.cpp)
 add_benchmark(BarrierTest benchmarks/barrier_test.cpp)
 add_benchmark(EssentialGreekTest benchmarks/EssentialGreekTest.cpp)
 add_benchmark(RuntimeDispatchDemo benchmarks/runtime_dispatch_demo.cpp)
+add_benchmark(AsianTest benchmarks/asian_test.cpp)
 
 # ==============================================================================
 # 5. STATUS REPORT

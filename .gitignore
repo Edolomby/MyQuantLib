@@ -43,6 +43,3 @@ boost_1_90_0/
 .cache/
 .vscode/
 build/
-
-# Ignore compiled binaries
-benchmark_heston
