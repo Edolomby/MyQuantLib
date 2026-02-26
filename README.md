@@ -53,7 +53,7 @@ MyQuantLib implements the **Affine Stochastic Volatility and Jumps (ASVJ)** fram
 - **C++20** compatible compiler (GCC 10+, Clang 11+, MSVC 19.30+)
 - **CMake** 3.15+
 - **OpenMP** (for multi-threading)
-- **Boost 1.84+** (introduces `xoshiro256++` fast RNG via `<boost/random/xoshiro.hpp>`)
+- **Boost 1.88+** (introduces `xoshiro256++` fast RNG via `<boost/random/xoshiro.hpp>`)
 - **Eigen3** 3.3+ (for linear algebra operations)
 
 > **⚠️ *Important Note for Windows / Visual Studio Users (OpenMP)** > Microsoft Visual Studio's default OpenMP implementation is currently limited to an older standard (OpenMP 2.0). Because MyQuantLib uses modern parallel features for its Monte Carlo engine, compiling with the default MSVC toolset may cause issues.  
