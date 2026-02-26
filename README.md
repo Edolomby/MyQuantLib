@@ -1,6 +1,6 @@
 # MyQuantLib
 
-**MyQuantLib** is a high-performance, C++20 header-only quantitative finance library focused on Option Pricing. Built from the ground up to achieve **zero-runtime-overhead** via static polymorphism (templates and CRTP), the library offers incredibly fast evaluation of options under advanced stochastic volatility and jump-diffusion models.
+**MyQuantLib** is a high-performance, C++20 header-only quantitative finance library focused on Option Pricing. Built from the ground up to achieve **zero-runtime-overhead** via static polymorphism (policy-based templates and compile-time specialization), the library offers incredibly fast evaluation of options under advanced stochastic volatility and jump-diffusion models.
 
 ## 🌟 Key Features
 

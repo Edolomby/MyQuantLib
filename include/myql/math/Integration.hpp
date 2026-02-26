@@ -33,20 +33,20 @@ inline double adaptive_simpson_impl(const Func &f, double a, double b,
   double Sright = h_12 * (fc + 4.0 * fe + fb);
   double S2 = Sleft + Sright;
 
-  // 1. Safety Check: Propagate NaNs instantly
+  // Safety Check: Propagate NaNs instantly
   // If the math blows up (e.g. log(-1)), stop calculating to save cycles.
-  if (std::isnan(S2) || std::isinf(S2)) {
-    return std::numeric_limits<double>::quiet_NaN();
-  }
+  // commented because of enabled option clang(-Wnan-infinity-disabled)
+  // if (std::isnan(S2) || std::isinf(S2))
+  //   return std::numeric_limits<double>::quiet_NaN();
 
-  // 2. Convergence Check
+  // Convergence Check
   // Richardson Extrapolation: Error is approx (S2 - S) / 15
   if (depth <= 0 || std::abs(S2 - S) <= 15.0 * eps) {
     // Return the refined value + Richardson correction
     return S2 + (S2 - S) * (1.0 / 15.0);
   }
 
-  // 3. Recurse
+  // Recurse
   // Split error budget between children (eps / 2)
   return adaptive_simpson_impl(f, a, c, 0.5 * eps, Sleft, fa, fc, fd,
                                depth - 1) +
