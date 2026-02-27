@@ -314,7 +314,6 @@ res.prices_std_err[i];   // MC only
 ---
 
 ## 🔮 Next Steps / Future Work
-- Integration of **Payoff Smoothing** to accurately compute Monte Carlo Greeks on discontinuous digital payoffs without finite-difference boundary issues.
 - Integration of Forward starting options.
 - Integration of Full Greek mode (Vega, Theta, Rho).
 - Integration of geometric Asian options in the Fourier engine.
