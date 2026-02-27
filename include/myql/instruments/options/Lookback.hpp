@@ -18,16 +18,18 @@ class LookbackOption {
 
   static constexpr bool is_scalar = std::is_floating_point_v<StrikeContainer>;
 
-  // Helper to compute payoff based on strike type
+  // Helper to compute payoff based on strike type (Mode forwarded to payoff)
+  template <GreekMode Mode = GreekMode::None>
   inline double compute_payoff(double spot_scaled, double extreme_scaled,
                                double K) const {
     if constexpr (FixedStrike) {
-      return payoff_func_(extreme_scaled, K);
+      return payoff_func_.template operator()<Mode>(extreme_scaled, K);
     } else {
       // Floating call: max(spot - extreme, 0) -> payoff_func_Call(spot,
       // extreme) Floating put:  max(extreme - spot, 0) -> payoff_func_Put(spot,
       // extreme)
-      return payoff_func_(spot_scaled, extreme_scaled);
+      return payoff_func_.template operator()<Mode>(spot_scaled,
+                                                    extreme_scaled);
     }
   }
 
@@ -39,8 +41,9 @@ public:
   // hist_min_S: observed minimum price over the elapsed period (0 = no history)
   // hist_max_S: observed maximum price over the elapsed period (0 = no history)
   LookbackOption(const StrikeContainer &K, double T, double hist_min_S = 0.0,
-                 double hist_max_S = 0.0)
-      : strikes_(K), T_(T), hist_min_S_(hist_min_S), hist_max_S_(hist_max_S) {}
+                 double hist_max_S = 0.0, const PayoffT &payoff = PayoffT())
+      : strikes_(K), T_(T), payoff_func_(payoff), hist_min_S_(hist_min_S),
+        hist_max_S_(hist_max_S) {}
 
   template <GreekMode Mode = GreekMode::None>
   typename Tracker::Config
@@ -77,17 +80,19 @@ public:
     }
 
     if constexpr (is_scalar) {
-      base = compute_payoff(S_T, extreme, strikes_);
+      base = compute_payoff<Mode>(S_T, extreme, strikes_);
       if constexpr (Mode == GreekMode::Essential || Mode == GreekMode::Full) {
-        up = compute_payoff(S_T * mult_up, extreme * mult_up, strikes_);
-        dn = compute_payoff(S_T * mult_dn, extreme * mult_dn, strikes_);
+        up = compute_payoff<Mode>(S_T * mult_up, extreme * mult_up, strikes_);
+        dn = compute_payoff<Mode>(S_T * mult_dn, extreme * mult_dn, strikes_);
       }
     } else {
       for (size_t i = 0; i < strikes_.size(); ++i) {
-        base[i] = compute_payoff(S_T, extreme, strikes_[i]);
+        base[i] = compute_payoff<Mode>(S_T, extreme, strikes_[i]);
         if constexpr (Mode == GreekMode::Essential || Mode == GreekMode::Full) {
-          up[i] = compute_payoff(S_T * mult_up, extreme * mult_up, strikes_[i]);
-          dn[i] = compute_payoff(S_T * mult_dn, extreme * mult_dn, strikes_[i]);
+          up[i] = compute_payoff<Mode>(S_T * mult_up, extreme * mult_up,
+                                       strikes_[i]);
+          dn[i] = compute_payoff<Mode>(S_T * mult_dn, extreme * mult_dn,
+                                       strikes_[i]);
         }
       }
     }
@@ -101,4 +106,5 @@ public:
   }
   double get_maturity() const { return T_; }
   const StrikeContainer &get_strikes() const { return strikes_; }
+  PayoffT &get_payoff_mut() { return payoff_func_; }
 };

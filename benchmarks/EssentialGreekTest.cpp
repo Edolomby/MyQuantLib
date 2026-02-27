@@ -188,7 +188,7 @@ int main() {
   run_all_models.template operator()<PayoffVanilla<OptionType::Put>>(
       "VanillaPut", vanilla_store);
 
-  utils::printVectors(
+  myql::utils::printVectors(
       {"Model", "Payoff", "Greek", "T", "Strike", "Fourier", "MC", "MC StdErr",
        "Z-Score", "Status"},
       vanilla_store.model, vanilla_store.payoff, vanilla_store.greek,
@@ -209,7 +209,7 @@ int main() {
   run_all_models.template operator()<PayoffAssetOrNothing<OptionType::Put>>(
       "AssetPut", digital_store);
 
-  utils::printVectors(
+  myql::utils::printVectors(
       {"Model", "Payoff", "Greek", "T", "Strike", "Fourier", "MC", "MC StdErr",
        "Z-Score", "Status"},
       digital_store.model, digital_store.payoff, digital_store.greek,

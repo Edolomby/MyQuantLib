@@ -8,17 +8,29 @@
 #include <type_traits>
 #include <vector>
 
-namespace utils {
+namespace myql::utils {
 
 // -------------------------------------------------------------------------
-// Helper: Convert any type to string with smart formatting
+// Float formatting options
 // -------------------------------------------------------------------------
-template <typename T> std::string toString(const T &value) {
+enum class FloatFormat { Default, Scientific };
+
+struct TableConfig {
+  FloatFormat format = FloatFormat::Default;
+  int precision = 8; // significant digits (Default) or mantissa digits (Sci)
+};
+
+// -------------------------------------------------------------------------
+// Helper: Convert any type to string, respecting TableConfig
+// -------------------------------------------------------------------------
+template <typename T>
+std::string toString(const T &value, const TableConfig &cfg = {}) {
   std::ostringstream oss;
   if constexpr (std::is_floating_point_v<T>) {
-    // 'defaultfloat' chooses fixed or scientific based on magnitude
-    // Adjust precision if you need more digits for benchmark comparisons
-    oss << std::defaultfloat << std::setprecision(8) << value;
+    if (cfg.format == FloatFormat::Scientific)
+      oss << std::scientific << std::setprecision(cfg.precision) << value;
+    else
+      oss << std::defaultfloat << std::setprecision(cfg.precision) << value;
   } else {
     oss << value;
   }
@@ -27,11 +39,22 @@ template <typename T> std::string toString(const T &value) {
 
 // -------------------------------------------------------------------------
 // Generic Table Printer for Vectors
-// Can accept any number of vectors of different types
-// Usage: printVectors({"Col1", "Col2"}, vec1, vec2);
+//
+// TableConfig is the FIRST argument (before headers) so that the variadic
+// pack deduction is unambiguous. A convenience overload without config is
+// provided so existing call sites continue to compile unchanged.
+//
+// Usage:
+//   // default formatting (backward-compatible)
+//   printVectors({"Col1","Col2"}, vec1, vec2);
+//
+//   // scientific notation with 4 mantissa digits
+//   printVectors(TableConfig{FloatFormat::Scientific, 4},
+//                {"Col1","Col2"}, vec1, vec2);
 // -------------------------------------------------------------------------
 template <typename... Ts>
-void printVectors(const std::vector<std::string> &headers,
+void printVectors(const TableConfig &cfg,
+                  const std::vector<std::string> &headers,
                   const std::vector<Ts> &...vecs) {
 
   // 1. Validation
@@ -40,23 +63,19 @@ void printVectors(const std::vector<std::string> &headers,
         "Error: Headers count must match the number of vectors.");
   }
 
-  // Helper to ensure we use the exact same string for width calc and printing
-  auto get_str_val = [](const auto &val) { return toString(val); };
+  auto get_str_val = [&](const auto &val) { return toString(val, cfg); };
 
   // 2. Calculate Column Widths
   std::vector<size_t> widths;
-  for (const auto &header : headers) {
+  for (const auto &header : headers)
     widths.push_back(header.length());
-  }
 
   size_t i = 0;
   auto calculate_widths = [&](const auto &vec) {
-    for (const auto &item : vec) {
+    for (const auto &item : vec)
       widths[i] = std::max(widths[i], get_str_val(item).length());
-    }
     i++;
   };
-  // Fold expression to apply lambda to all vectors
   (..., calculate_widths(vecs));
 
   // 3. Print Table
@@ -72,9 +91,8 @@ void printVectors(const std::vector<std::string> &headers,
 
   // Headers
   std::cout << "|";
-  for (size_t j = 0; j < headers.size(); ++j) {
+  for (size_t j = 0; j < headers.size(); ++j)
     std::cout << " " << std::left << std::setw(widths[j]) << headers[j] << " |";
-  }
   std::cout << "\n";
 
   // Separator
@@ -85,14 +103,12 @@ void printVectors(const std::vector<std::string> &headers,
   for (size_t row = 0; row < max_rows; ++row) {
     std::cout << "|";
     size_t current_col = 0;
-
     auto print_cell = [&](const auto &vec) {
       std::cout << " " << std::left << std::setw(widths[current_col]);
-      if (row < vec.size()) {
+      if (row < vec.size())
         std::cout << get_str_val(vec[row]);
-      } else {
-        std::cout << ""; // Empty cell if vector is shorter
-      }
+      else
+        std::cout << "";
       std::cout << " |";
       current_col++;
     };
@@ -104,4 +120,11 @@ void printVectors(const std::vector<std::string> &headers,
   print_separator();
 }
 
-} // namespace utils
+// Backward-compatible overload: no config → default formatting
+template <typename... Ts>
+void printVectors(const std::vector<std::string> &headers,
+                  const std::vector<Ts> &...vecs) {
+  printVectors(TableConfig{}, headers, vecs...);
+}
+
+} // namespace myql::utils

@@ -189,12 +189,12 @@ int main() {
   }
 
   // 5. FINAL PRINTING
-  utils::printVectors({"Model/Payoff", "T", "Strike", "Fourier", "MC Price",
-                       "StdErr", "Z-Score", "Status"},
-                      global_storage.model_payoff, global_storage.T,
-                      global_storage.K, global_storage.fourier,
-                      global_storage.mc, global_storage.stderr,
-                      global_storage.z_score, global_storage.status);
+  myql::utils::printVectors({"Model/Payoff", "T", "Strike", "Fourier",
+                             "MC Price", "StdErr", "Z-Score", "Status"},
+                            global_storage.model_payoff, global_storage.T,
+                            global_storage.K, global_storage.fourier,
+                            global_storage.mc, global_storage.stderr,
+                            global_storage.z_score, global_storage.status);
 
   return 0;
 }

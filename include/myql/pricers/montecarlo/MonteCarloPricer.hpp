@@ -11,6 +11,7 @@
 // -----------------------------------------------------------------------------
 // Configuration
 // -----------------------------------------------------------------------------
+
 struct MonteCarloConfig {
   size_t num_paths = 100000;
   size_t time_steps = 100;
@@ -18,12 +19,60 @@ struct MonteCarloConfig {
   double fd_bump = 1e-4; // Finite Difference Bump (e.g., 1 basis point)
 };
 
+namespace detail {
+
+// Helper trait to dispatch variance calculation to the proper free functions
+template <typename ModelT>
+inline double compute_expected_average_variance(const ModelT &model, double T) {
+  using namespace myql::models::variance;
+  double var = 0.0;
+
+  if constexpr (requires { model.vol; }) {
+    var += expected_average_variance(model.vol, T);
+  } else if constexpr (requires { model.heston; }) {
+    var += expected_average_variance(model.heston, T);
+  } else if constexpr (requires { model.heston1; }) {
+    var += expected_average_variance(model.heston1, T);
+    var += expected_average_variance(model.heston2, T);
+  }
+
+  var += jump_variance(model.jump);
+  return var;
+}
+
+// Helper function to dynamically calculate and inject optimal payoff smoothing
+// bandwidth for discontinuous options using model-driven variance proxies.
+template <GreekMode Mode, typename ModelT, typename InstrumentT>
+inline void apply_automatic_smoothing(const ModelT &model, InstrumentT &instr,
+                                      double S0) {
+  if constexpr (Mode == GreekMode::Essential || Mode == GreekMode::Full) {
+    using PayoffT = typename InstrumentT::PayoffType;
+    if constexpr (PayoffT::needs_smoothing) {
+      if (instr.get_payoff_mut().eps < 0.0) {
+        // Automatic bandwidth selection
+        const double T = instr.get_maturity();
+        const double sigma_eff =
+            std::sqrt(compute_expected_average_variance(model, T));
+        // Sweet-spot: eps ~ sigma * K * sqrt(T) / 10
+        if constexpr (std::is_scalar_v<typename InstrumentT::ResultType>) {
+          const double K = instr.get_strikes();
+          instr.get_payoff_mut().eps = sigma_eff * K * std::sqrt(T) / 10.0;
+        } else {
+          // For vectorized options we use the ATM strike (S0) as a proxy scale
+          instr.get_payoff_mut().eps = sigma_eff * S0 * std::sqrt(T) / 10.0;
+        }
+      }
+    }
+  }
+}
+} // namespace detail
+
 // -----------------------------------------------------------------------------
 // MONTE CARLO PRICER (Greek-Aware)
 // Symmetric API with FourierPricer:
 //   MonteCarloPricer<Model, Stepper, Instrument, Mode> pricer(model, cfg);
 //   auto res = pricer.calculate(S0, r, q, instr);
-//   res.price, res.delta, ...
+//   res.price, res.delta, etc... (depending on GreekMode)
 // -----------------------------------------------------------------------------
 template <typename Model, typename Stepper, typename Instrument,
           GreekMode Mode = GreekMode::None,
@@ -37,11 +86,17 @@ public:
       : model_(model), cfg_(cfg) {}
 
   ReturnStruct calculate(double S0, double r, double q,
-                         const Instrument &instr) const {
+                         const Instrument &input_instr) const {
+
+    // Create a local mutable copy for potential payoff smoothing
+    Instrument instr = input_instr;
+    const double T = instr.get_maturity();
+
+    // Dynamic application of payoff smoothing (if requested and applicable)
+    detail::apply_automatic_smoothing<Mode>(model_, instr, S0);
 
     const size_t steps = cfg_.time_steps;
     const size_t M = cfg_.num_paths;
-    const double T = instr.get_maturity();
     const double dt = T / static_cast<double>(steps);
     const double h = S0 * cfg_.fd_bump;
     const size_t n_contracts = instr.size();
@@ -107,20 +162,20 @@ public:
 #pragma omp for schedule(static) nowait
       for (size_t i = 0; i < M; ++i) {
 
-        // 1. Single physics simulation
+        // Single physics simulation
         stepper.start_path(state, tracker_cfg, S0);
         stepper.multi_step(state, tracker_cfg, rng, steps);
 
-        // 2. Instrument calculates all requested payoffs instantly
+        // Instrument calculates all requested payoffs instantly
         instr.template calculate_to_buffer<Mode>(state, S0, h, p_base, p_up,
                                                  p_dn);
 
-        // 3. Accumulate price
+        // Accumulate price
         using namespace myql::utils;
         l_sum_price += p_base;
         l_sq_sum_price += p_base * p_base;
 
-        // 4. Calculate and accumulate pathwise greeks
+        // Calculate and accumulate pathwise greeks
         if constexpr (Mode == GreekMode::Essential || Mode == GreekMode::Full) {
           ResultType path_delta = (p_up - p_dn) * (1.0 / (2.0 * h));
           ResultType path_gamma =

@@ -206,7 +206,7 @@ int main() {
                   BatesDown>("Bates", bates_model, mc_cfg);
 
   // Print Results
-  utils::printVectors(
+  myql::utils::printVectors(
       {"Model", "Type", "T", "Strike", "Barrier", "Eur Price", "In Price",
        "Out Price", "In+Out Sum", "Abs Diff", "Status"},
       global_storage.model, global_storage.type, global_storage.T,

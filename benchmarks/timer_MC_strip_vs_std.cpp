@@ -17,8 +17,6 @@
 // UTILS
 #include <myql/utils/TablePrinter.hpp>
 
-using namespace std::chrono;
-
 // -----------------------------------------------------------------------------
 // DATA STORAGE FOR TABLE PRINTER
 // -----------------------------------------------------------------------------
@@ -39,6 +37,8 @@ PerfResults perf_data;
 template <typename Model, typename Stepper>
 void run_benchmark(const std::string &label, const Model &model,
                    const MonteCarloConfig &cfg) {
+
+  using namespace std::chrono;
   double S0 = 100.0, r = 0.03, q = 0.01, T = 1.0;
 
   // We will test with a strip of 20 strikes
@@ -115,11 +115,11 @@ int main() {
   }
 
   // --- FINAL PRINTING USING TablePrinter ---
-  utils::printVectors({"Model", "T", "N-Strikes", "Std Time(s)",
-                       "Strip Time(s)", "Speedup (x)"},
-                      perf_data.model_names, perf_data.maturities,
-                      perf_data.n_strikes, perf_data.time_std,
-                      perf_data.time_strip, perf_data.speedup);
+  myql::utils::printVectors({"Model", "T", "N-Strikes", "Std Time(s)",
+                             "Strip Time(s)", "Speedup (x)"},
+                            perf_data.model_names, perf_data.maturities,
+                            perf_data.n_strikes, perf_data.time_std,
+                            perf_data.time_strip, perf_data.speedup);
 
   return 0;
 }

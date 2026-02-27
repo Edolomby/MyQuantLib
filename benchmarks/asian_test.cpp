@@ -263,10 +263,11 @@ int main() {
                                            q, strikes, T1);
   }
 
-  utils::printVectors({"Test", "Model", "Type", "Strike", "MC Price",
-                       "0.5 x Fourier(K_eff)", "Z-score", "Status"},
-                      g_t1.test, g_t1.model, g_t1.type, g_t1.K, g_t1.mc_price,
-                      g_t1.benchmark, g_t1.col3, g_t1.status);
+  myql::utils::printVectors({"Test", "Model", "Type", "Strike", "MC Price",
+                             "0.5 x Fourier(K_eff)", "Z-score", "Status"},
+                            g_t1.test, g_t1.model, g_t1.type, g_t1.K,
+                            g_t1.mc_price, g_t1.benchmark, g_t1.col3,
+                            g_t1.status);
 
   // NOTE on [FAIL] rows for Heston and Bates:
   // The benchmark is the Fourier pricer, which uses the EXACT characteristic
@@ -304,10 +305,11 @@ int main() {
     }
   }
 
-  utils::printVectors({"Test", "Model", "Type", "Strike", "Larger Price",
-                       "Smaller Price", "Gap ($)", "Status"},
-                      g_t2.test, g_t2.model, g_t2.type, g_t2.K, g_t2.mc_price,
-                      g_t2.benchmark, g_t2.col3, g_t2.status);
+  myql::utils::printVectors({"Test", "Model", "Type", "Strike", "Larger Price",
+                             "Smaller Price", "Gap ($)", "Status"},
+                            g_t2.test, g_t2.model, g_t2.type, g_t2.K,
+                            g_t2.mc_price, g_t2.benchmark, g_t2.col3,
+                            g_t2.status);
 
   return 0;
 }

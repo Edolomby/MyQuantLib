@@ -24,13 +24,14 @@ class AsianOption {
   static constexpr bool is_scalar = std::is_floating_point_v<StrikeContainer>;
   static constexpr bool is_arith = std::is_same_v<TrackerT, TrackerArithAsian>;
 
-  // Helper to compute payoff based on strike type
+  // Helper to compute payoff based on strike type (Mode forwarded to payoff)
+  template <GreekMode Mode = GreekMode::None>
   inline double compute_payoff(double spot_scaled, double avg_scaled,
                                double K) const {
     if constexpr (FixedStrike) {
-      return payoff_func_(avg_scaled, K);
+      return payoff_func_.template operator()<Mode>(avg_scaled, K);
     } else {
-      return payoff_func_(spot_scaled, avg_scaled);
+      return payoff_func_.template operator()<Mode>(spot_scaled, avg_scaled);
     }
   }
 
@@ -40,23 +41,26 @@ public:
   using PayoffType = PayoffT;
 
   // ── Default: fresh option starting today ──────────────────────────────────
-  AsianOption(const StrikeContainer &K, double T) : strikes_(K), T_(T) {}
+  AsianOption(const StrikeContainer &K, double T,
+              const PayoffT &payoff = PayoffT())
+      : strikes_(K), T_(T), payoff_func_(payoff) {}
 
   // ── In-flight GeoAsian ─────────────────────────────────────────────────────
   // past_avg_log: observed average of log(S) over the elapsed period
   // t_elapsed:    calendar time between option start date and today
   AsianOption(const StrikeContainer &K, double T, double past_avg_log,
-              double t_elapsed)
-      : strikes_(K), T_(T), past_avg_log_(past_avg_log), t_elapsed_(t_elapsed) {
-  }
+              double t_elapsed, const PayoffT &payoff = PayoffT())
+      : strikes_(K), T_(T), payoff_func_(payoff), past_avg_log_(past_avg_log),
+        t_elapsed_(t_elapsed) {}
 
   // ── In-flight ArithAsian ───────────────────────────────────────────────────
   // past_avg_S:   observed arithmetic average of S  over the elapsed period
   // past_avg_log: observed average of log(S)         over the elapsed period
   // t_elapsed:    calendar time between option start date and today
   AsianOption(const StrikeContainer &K, double T, double past_avg_S,
-              double past_avg_log, double t_elapsed)
-      : strikes_(K), T_(T), past_avg_log_(past_avg_log),
+              double past_avg_log, double t_elapsed,
+              const PayoffT &payoff = PayoffT())
+      : strikes_(K), T_(T), payoff_func_(payoff), past_avg_log_(past_avg_log),
         past_avg_S_(past_avg_S), t_elapsed_(t_elapsed) {}
 
   template <GreekMode Mode = GreekMode::None>
@@ -97,17 +101,19 @@ public:
     }
 
     if constexpr (is_scalar) {
-      base = compute_payoff(S_T, avg, strikes_);
+      base = compute_payoff<Mode>(S_T, avg, strikes_);
       if constexpr (Mode == GreekMode::Essential || Mode == GreekMode::Full) {
-        up = compute_payoff(S_T * mult_up, avg * mult_up, strikes_);
-        dn = compute_payoff(S_T * mult_dn, avg * mult_dn, strikes_);
+        up = compute_payoff<Mode>(S_T * mult_up, avg * mult_up, strikes_);
+        dn = compute_payoff<Mode>(S_T * mult_dn, avg * mult_dn, strikes_);
       }
     } else {
       for (size_t i = 0; i < strikes_.size(); ++i) {
-        base[i] = compute_payoff(S_T, avg, strikes_[i]);
+        base[i] = compute_payoff<Mode>(S_T, avg, strikes_[i]);
         if constexpr (Mode == GreekMode::Essential || Mode == GreekMode::Full) {
-          up[i] = compute_payoff(S_T * mult_up, avg * mult_up, strikes_[i]);
-          dn[i] = compute_payoff(S_T * mult_dn, avg * mult_dn, strikes_[i]);
+          up[i] =
+              compute_payoff<Mode>(S_T * mult_up, avg * mult_up, strikes_[i]);
+          dn[i] =
+              compute_payoff<Mode>(S_T * mult_dn, avg * mult_dn, strikes_[i]);
         }
       }
     }
@@ -121,4 +127,5 @@ public:
   }
   double get_maturity() const { return T_; }
   const StrikeContainer &get_strikes() const { return strikes_; }
+  PayoffT &get_payoff_mut() { return payoff_func_; }
 };

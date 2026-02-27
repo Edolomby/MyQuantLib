@@ -170,7 +170,8 @@ void run_full_suite(const std::string &model_name, const ModelType &model,
 int main() {
   std::cout << "==============================================================="
                "=====\n";
-  std::cout << "  ASVJ FRAMEWORK: BENCHMARK WITH NEW INSTRUMENTS\n";
+  std::cout
+      << "  ASVJ FRAMEWORK: BENCHMARK FOURIER VS MC VANILLA CALLS AND PUTS\n";
   std::cout << "==============================================================="
                "=====\n";
 
@@ -244,12 +245,12 @@ int main() {
 
   // PRINT RESULTS
   std::cout << "\n";
-  utils::printVectors({"Model", "Details", "Fourier", "MC Price", "Diff",
-                       "MC Err", "Z-Score", "Status", "Four(ms)", "MC(s)"},
-                      results.scenarios, results.details,
-                      results.fourier_prices, results.mc_prices, results.diffs,
-                      results.mc_stderrs, results.z_scores, results.status,
-                      results.time_fourier, results.time_mc);
+  myql::utils::printVectors(
+      {"Model", "Details", "Fourier", "MC Price", "Diff", "MC Err", "Z-Score",
+       "Status", "Four(ms)", "MC(s)"},
+      results.scenarios, results.details, results.fourier_prices,
+      results.mc_prices, results.diffs, results.mc_stderrs, results.z_scores,
+      results.status, results.time_fourier, results.time_mc);
 
   return 0;
 }

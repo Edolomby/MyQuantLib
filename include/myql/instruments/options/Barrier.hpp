@@ -50,8 +50,9 @@ public:
   using PayoffType = PayoffT;
 
   BarrierOption(const StrikeContainer &K, double B, double T, double r = 0.0,
-                double rebate = 0.0)
-      : strikes_(K), barrier_(B), T_(T), rate_(r), rebate_(rebate) {}
+                double rebate = 0.0, const PayoffT &payoff = PayoffT())
+      : strikes_(K), barrier_(B), T_(T), rate_(r), rebate_(rebate),
+        payoff_func_(payoff) {}
 
   // 1. CONFIGURATION: Pass the GreekMode, S0, and h to compute the 3 barriers
   template <GreekMode Mode>
@@ -116,6 +117,7 @@ public:
   }
   double get_maturity() const { return T_; }
   double get_barrier() const { return barrier_; }
+  PayoffT &get_payoff_mut() { return payoff_func_; }
 };
 
 // =============================================================================

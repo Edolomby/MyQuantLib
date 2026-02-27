@@ -22,7 +22,9 @@ public:
   using PayoffType = PayoffPolicy;
 
   // Constructor handles both double and std::vector<double> automatically
-  EuropeanOption(const StrikeContainer &K, double T) : strikes_(K), T_(T) {}
+  EuropeanOption(const StrikeContainer &K, double T,
+                 const PayoffPolicy &payoff = PayoffPolicy())
+      : strikes_(K), T_(T), payoff_func_(payoff) {}
 
   template <GreekMode Mode = GreekMode::None>
   typename Tracker::Config
@@ -50,19 +52,21 @@ public:
 
     // --- COMPILE-TIME BRANCH: SCALAR (1D) ---
     if constexpr (is_scalar) {
-      base = payoff_func_(S_T, strikes_);
+      base = payoff_func_.template operator()<Mode>(S_T, strikes_);
       if constexpr (Mode == GreekMode::Essential || Mode == GreekMode::Full) {
-        up = payoff_func_(S_T * mult_up, strikes_);
-        dn = payoff_func_(S_T * mult_dn, strikes_);
+        up = payoff_func_.template operator()<Mode>(S_T * mult_up, strikes_);
+        dn = payoff_func_.template operator()<Mode>(S_T * mult_dn, strikes_);
       }
     }
     // --- COMPILE-TIME BRANCH: VECTORIZED (N-D) ---
     else {
       for (size_t i = 0; i < strikes_.size(); ++i) {
-        base[i] = payoff_func_(S_T, strikes_[i]);
+        base[i] = payoff_func_.template operator()<Mode>(S_T, strikes_[i]);
         if constexpr (Mode == GreekMode::Essential || Mode == GreekMode::Full) {
-          up[i] = payoff_func_(S_T * mult_up, strikes_[i]);
-          dn[i] = payoff_func_(S_T * mult_dn, strikes_[i]);
+          up[i] = payoff_func_.template operator()<Mode>(S_T * mult_up,
+                                                         strikes_[i]);
+          dn[i] = payoff_func_.template operator()<Mode>(S_T * mult_dn,
+                                                         strikes_[i]);
         }
       }
     }
@@ -77,4 +81,5 @@ public:
 
   double get_maturity() const { return T_; }
   const StrikeContainer &get_strikes() const { return strikes_; }
+  PayoffPolicy &get_payoff_mut() { return payoff_func_; }
 };

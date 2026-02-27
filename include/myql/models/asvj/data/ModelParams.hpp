@@ -45,3 +45,37 @@ struct KouParams {
   double eta1;   // Inverse mean of up jump
   double eta2;   // Inverse mean of down jump
 };
+
+// =============================================================================
+// 3. EXPECTED AVERAGE VARIANCE HELPERS (for Payoff Smoothing)
+// Provides rigorous expected average variance
+// $\bar{v}_T = \frac{1}{T} \int_0^T \mathbb{E}[v_t] dt$
+// =============================================================================
+namespace myql::models::variance {
+
+// --- Diffusion Variance ---
+inline double expected_average_variance(double vol, double /*T*/) {
+  return vol * vol;
+}
+
+inline double expected_average_variance(const HestonParams &h, double T) {
+  if (std::abs(h.kappa * T) > 1e-8) {
+    return h.theta +
+           (h.v0 - h.theta) * (1.0 - std::exp(-h.kappa * T)) / (h.kappa * T);
+  }
+  return h.v0; // Taylor fallback for tiny kappa*T
+}
+
+// --- Jump Variance ---
+inline double jump_variance(const NoJumpParams &) { return 0.0; }
+
+inline double jump_variance(const MertonParams &j) {
+  return j.lambda * (j.mu * j.mu + j.delta * j.delta);
+}
+
+inline double jump_variance(const KouParams &j) {
+  return j.lambda *
+         (j.p_up / (j.eta1 * j.eta1) + (1.0 - j.p_up) / (j.eta2 * j.eta2));
+}
+
+} // namespace myql::models::variance
