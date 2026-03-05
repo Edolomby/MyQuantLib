@@ -20,8 +20,9 @@ struct DispatchResult {
   // Essential Greeks
   std::vector<double> deltas; // Empty if GreekMode == None
   std::vector<double> gammas; // Empty if GreekMode == None
-  // Full Greeks (planned for future release / MC extension)
-  std::vector<double> vegas;
+  // Full Greeks
+  // vegas[0] = factor 1 sensitivities, vegas[1] = factor 2 sensitivities
+  std::vector<std::vector<double>> vegas;
   std::vector<double> thetas;
   std::vector<double> rhos;
 
@@ -29,9 +30,10 @@ struct DispatchResult {
   std::vector<double> prices_std_err; // MC only, empty for Fourier
   std::vector<double> deltas_std_err; // MC only
   std::vector<double> gammas_std_err; // MC only
-  std::vector<double> vegas_std_err;  // MC only
-  std::vector<double> thetas_std_err; // MC only
-  std::vector<double> rhos_std_err;   // MC only
+  // vegas_std_err[0] = factor 1, vegas_std_err[1] = factor 2
+  std::vector<std::vector<double>> vegas_std_err; // MC only
+  std::vector<double> thetas_std_err;             // MC only
+  std::vector<double> rhos_std_err;               // MC only
 
   double time_ms = 0.0;
 };
@@ -57,7 +59,10 @@ DispatchResult format_dispatch_result(const EngineResult &res) {
     out.gammas = to_vec(res.gamma);
 
     if constexpr (requires { res.vega; }) {
-      out.vegas = to_vec(res.vega);
+      // res.vega is std::array<T,2>: iterate over both factors
+      out.vegas.reserve(2);
+      for (auto &v : res.vega)
+        out.vegas.push_back(to_vec(v));
       out.thetas = to_vec(res.theta);
       out.rhos = to_vec(res.rho);
     }
@@ -70,7 +75,10 @@ DispatchResult format_dispatch_result(const EngineResult &res) {
       out.gammas_std_err = to_vec(res.gamma_std_err);
 
       if constexpr (requires { res.vega_std_err; }) {
-        out.vegas_std_err = to_vec(res.vega_std_err);
+        // res.vega_std_err is std::array<T,2>
+        out.vegas_std_err.reserve(2);
+        for (auto &v : res.vega_std_err)
+          out.vegas_std_err.push_back(to_vec(v));
         out.thetas_std_err = to_vec(res.theta_std_err);
         out.rhos_std_err = to_vec(res.rho_std_err);
       }

@@ -48,7 +48,8 @@ public:
   template <GreekMode Mode = GreekMode::None>
   typename Tracker::Config
   get_tracker_config([[maybe_unused]] double S0 = 100.0,
-                     [[maybe_unused]] double h = 0.0) const {
+                     [[maybe_unused]] double h = 0.0,
+                     [[maybe_unused]] double T_bumped = 0.0) const {
     Tracker::Config cfg;
     if (hist_min_S_ > 0.0)
       cfg.hist_min_logS = std::log(hist_min_S_);

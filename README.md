@@ -8,9 +8,9 @@
 - **Zero-Runtime-Overhead Architecture**: Every model, instrument, and pricing scheme is resolved at compile time, eliminating expensive virtual function calls in hot loops.
 - **Symmetric Pricing API**: Both the Fourier and Monte Carlo engines expose an identical, easy-to-use API (`.calculate(S0, r, q, instrument)`).
 - **Comprehensive Greeks Support**:
-  - *Analytical Greeks* via Fourier pricing (Delta, Gamma).
-  - *Pathwise Finite Differences* for Monte Carlo (Delta, Gamma).
-  - *(Full Greek mode including Vega, Theta, and Rho is planned for a future release).*
+  - *Analytical Greeks* via Fourier pricing (`GreekMode::Essential` for Delta/Gamma, `GreekMode::Full` for Vega/Theta/Rho).
+  - *Pathwise Finite Differences* for Monte Carlo (`GreekMode::Essential` for Delta/Gamma).
+  - *Exact Common Random Numbers (CRN)* for Monte Carlo Full Greeks, enabling mathematically exact variance reduction for Vega, Theta, and Rho via a synchronized multi-stepper architecture.
 - **Runtime Dispatch Layer**: Includes a `std::variant`-based boundary layer allowing model and instrument selection purely from runtime strings (e.g. JSON/CSV parsing) while retaining the zero-overhead engine core.
 - **Vectorized Evaluation**: Support for pricing "strips" of options across multiple strikes/maturities simultaneously (Struct-of-Arrays pattern).
 - **Parallel Computing**: Fully utilizes OpenMP for robust Monte Carlo path simulation.
@@ -177,9 +177,9 @@ int main() {
 }
 ```
 
-### Example 3: Essential Greeks Calculation
+### Example 3: Essential and Full Greeks Calculation
 
-By upgrading the `GreekMode` template parameter, the engines automatically accumulate and return pathwise derivatives.
+By upgrading the `GreekMode` template parameter, the engines automatically accumulate and return derivatives. In `GreekMode::Full`, the Monte Carlo engine uses an advanced single-loop architecture to compute Vega, Theta, and Rho using exact Common Random Numbers (CRN), minimizing standard errors.
 
 ```cpp
 #include <iostream>
@@ -193,20 +193,24 @@ void calculate_greeks(const HestonModel& model, const CallVanilla& option) {
     double S0 = 100.0, r = 0.05, q = 0.02;
     MonteCarloConfig mc_cfg{200000, 100, 42};
 
-    // Calculate MC Greeks
+    // Calculate MC Full Greeks
     using Stepper = ASVJStepper<SchemeExact, NullVolScheme, NoJumps, TrackerEuropean>;
-    MonteCarloPricer<HestonModel, Stepper, CallVanilla, GreekMode::Essential> mc_pricer(model, mc_cfg);
+    MonteCarloPricer<HestonModel, Stepper, CallVanilla, GreekMode::Full> mc_pricer(model, mc_cfg);
     auto res_mc = mc_pricer.calculate(S0, r, q, option);
 
     std::cout << "MC Delta: " << res_mc.delta << " +- " << res_mc.delta_std_err << "\n";
     std::cout << "MC Gamma: " << res_mc.gamma << " +- " << res_mc.gamma_std_err << "\n";
+    std::cout << "MC Vega:  " << res_mc.vega[0] << " +- " << res_mc.vega_std_err[0] << "\n";
+    std::cout << "MC Theta: " << res_mc.theta << " +- " << res_mc.theta_std_err << "\n";
 
-    // Calculate Analytical Fourier Greeks
-    FourierPricer<HestonModel, CallVanilla, GreekMode::Essential> fourier_pricer(model);
+    // Calculate Analytical Fourier Full Greeks
+    FourierPricer<HestonModel, CallVanilla, GreekMode::Full> fourier_pricer(model);
     auto res_fourier = fourier_pricer.calculate(S0, r, q, option);
 
-    std::cout << "Analytical Delta: " << res_fourier.delta << "\n";
+    std::cout << "\nAnalytical Delta: " << res_fourier.delta << "\n";
     std::cout << "Analytical Gamma: " << res_fourier.gamma << "\n";
+    std::cout << "Analytical Vega:  " << res_fourier.vega[0] << "\n";
+    std::cout << "Analytical Theta: " << res_fourier.theta << "\n";
 }
 ```
 
@@ -315,7 +319,6 @@ res.prices_std_err[i];   // MC only
 
 ## 🔮 Next Steps / Future Work
 - Integration of Forward starting options.
-- Integration of Full Greek mode (Vega, Theta, Rho).
 - Integration of geometric Asian options in the Fourier engine.
 - Implementation of Control Variates for Monte Carlo and quasi-Monte Carlo.
 - Implementation of a generalized **Calibration Module** to fit ASVJ models to market data.

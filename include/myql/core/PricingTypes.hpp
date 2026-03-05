@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 
 // -----------------------------------------------------------------------------
 // UNIVERSAL GREEK REQUEST MODES
@@ -28,7 +29,9 @@ template <typename T> struct FourierResult<GreekMode::Full, T> {
   T price{};
   T delta{};
   T gamma{};
-  T vega{};
+  // vega[0] = factor 1, vega[1] = factor 2 (always 0 for non-double-factor
+  // models)
+  std::array<T, 2> vega{};
   T theta{};
   T rho{};
 };
@@ -64,8 +67,10 @@ template <typename T> struct MonteCarloResult<GreekMode::Full, T> {
   T gamma;
   T gamma_std_err;
 
-  T vega;
-  T vega_std_err;
+  // vega[0] = factor 1, vega[1] = factor 2 (always 0 for non-double-factor
+  // models)
+  std::array<T, 2> vega{};
+  std::array<T, 2> vega_std_err{};
 
   T theta;
   T theta_std_err;

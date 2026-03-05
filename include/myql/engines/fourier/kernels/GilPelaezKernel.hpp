@@ -11,17 +11,21 @@ enum class KernelTarget {
   Price, // W(u) = 1 / (iu)
   Dx,    // W(u) = 1
   Dxx,   // W(u) = iu
-  Vega,  // Placeholder for Full Mode
-  Theta, // Placeholder for Full Mode
-  Rho    // Placeholder for Full Mode
+  Vega,  // d(psi)/dv0i * base / (iu)  -- Full Mode
+  Theta, // (d(psi)/dT + iu*(r-q)) * base / (iu)  -- Full Mode
+  Rho    // T * Re[base]  -- Full Mode
 };
 
 // =============================================================================
-// EUROPEAN OPTION STRATEGY (Generic)
-// Implements the Gil-Pelaez Integrand for P1 and P2 probabilities.
-// use general KernelTarget enum to select kernel (enabling greeks)
+// GIL-PELAEZ KERNEL
+// Template parameters:
+//   Target     -- selects the integrand formula (compile-time)
+//   Model      -- the model type
+//   Traits     -- AffineTraits specialization for Model
+//   FactorIdx  -- var factor index for Vega kernel (compile-time, default 0)
 // =============================================================================
-template <KernelTarget Target, typename Model, typename Traits>
+template <KernelTarget Target, typename Model, typename Traits,
+          int FactorIdx = 0>
 class GilPelaezKernel {
 public:
   using Complex = std::complex<double>;
@@ -46,7 +50,7 @@ public:
     Complex psi_martingale =
         Traits::characteristic_log_martingale(model_, u_shifted, T_);
 
-    // 3. Base Exponent: i*u*(r-q)T + psi(u) - i*u*ln(K/S0)
+    // 3. Base Exponent: i*u*(r-q)*T + psi(u_shifted) - i*u*ln(K/S0)
     Complex final_exponent =
         (I * u * rate_drift_) + psi_martingale - (I * u * logK_);
     Complex base_term = std::exp(final_exponent);
@@ -54,17 +58,32 @@ public:
     // 4. Compile-Time Dispatch for W(u)
     if constexpr (Target == KernelTarget::Price) {
       return std::real(base_term / (I * u));
+
     } else if constexpr (Target == KernelTarget::Dx) {
       return std::real(base_term);
+
     } else if constexpr (Target == KernelTarget::Dxx) {
       return std::real(base_term * (I * u));
+
+    } else if constexpr (Target == KernelTarget::Vega) {
+      // d(psi)/dv0i evaluated at u_shifted, multiplied into the Price integrand
+      // FactorIdx selects which variance factor to differentiate (compile-time)
+      Complex dpsi_dv0 =
+          Traits::template d_cf_dv0<FactorIdx>(model_, u_shifted, T_);
+      return std::real(base_term * dpsi_dv0 / (I * u));
+
+    } else if constexpr (Target == KernelTarget::Theta) {
+      // d/dT of Re[base/(iu)] = Re[(d_psi/dT + i*u*(r-q)) * base / (iu)]
+      Complex dpsi_dT = Traits::d_cf_dT(model_, u_shifted, T_);
+      double rate_per_T = (T_ > 1e-12) ? (rate_drift_ / T_) : 0.0;
+      Complex dT_factor = dpsi_dT + I * u * rate_per_T;
+      return std::real(base_term * dT_factor / (I * u));
+
     } else {
-      static_assert(Target == KernelTarget::Price ||
-                        Target == KernelTarget::Dx ||
-                        Target == KernelTarget::Dxx,
-                    "Full Greeks (Vega, Theta, Rho) are planned but not yet "
-                    "implemented.");
-      return 0.0;
+      // KernelTarget::Rho
+      // d/dr of i*u*(r-q)*T in exponent gives i*u*T
+      // so d/dr Re[base/(iu)] = T * Re[base]
+      return T_ * std::real(base_term);
     }
   }
 

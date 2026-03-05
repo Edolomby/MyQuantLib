@@ -12,9 +12,11 @@
 // A. Zero Factor Models (GBM, Merton, Kou)
 // ----------------------------------------
 template <typename JumpParamType = NoJumpParams> struct ZeroFactorModel {
+  static constexpr int num_variance_factors = 0;
   double vol;
   JumpParamType jump;
 
+  // Constructor
   ZeroFactorModel(double v, const JumpParamType &j = JumpParamType{})
       : vol(v), jump(j) {}
 };
@@ -22,6 +24,7 @@ template <typename JumpParamType = NoJumpParams> struct ZeroFactorModel {
 // B. Single Factor Models (Heston, Bates)
 // ----------------------------------------
 template <typename JumpParamType> struct SingleFactorModel {
+  static constexpr int num_variance_factors = 1;
   HestonParams heston;
   JumpParamType jump;
 
@@ -34,12 +37,13 @@ template <typename JumpParamType> struct SingleFactorModel {
 // C. Double Factor Models (Double Heston, Double Bates)
 // -----------------------------------------------------
 template <typename JumpParamType> struct DoubleFactorModel {
+  static constexpr int num_variance_factors = 2;
   HestonParams heston1;
   HestonParams heston2;
   JumpParamType jump;
 
   // no correlation between the two variance processes
-
+  // Constructor
   DoubleFactorModel(const HestonParams &h1, const HestonParams &h2,
                     const JumpParamType &j = JumpParamType())
       : heston1(h1), heston2(h2), jump(j) {}

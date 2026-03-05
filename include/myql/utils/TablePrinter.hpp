@@ -13,11 +13,12 @@ namespace myql::utils {
 // -------------------------------------------------------------------------
 // Float formatting options
 // -------------------------------------------------------------------------
-enum class FloatFormat { Default, Scientific };
+enum class FloatFormat { Default, Scientific, Fixed };
 
 struct TableConfig {
   FloatFormat format = FloatFormat::Default;
-  int precision = 8; // significant digits (Default) or mantissa digits (Sci)
+  int precision =
+      6; // significant digits (Default) or mantissa digits (Sci/Fixed)
 };
 
 // -------------------------------------------------------------------------
@@ -29,6 +30,8 @@ std::string toString(const T &value, const TableConfig &cfg = {}) {
   if constexpr (std::is_floating_point_v<T>) {
     if (cfg.format == FloatFormat::Scientific)
       oss << std::scientific << std::setprecision(cfg.precision) << value;
+    else if (cfg.format == FloatFormat::Fixed)
+      oss << std::fixed << std::setprecision(cfg.precision) << value;
     else
       oss << std::defaultfloat << std::setprecision(cfg.precision) << value;
   } else {

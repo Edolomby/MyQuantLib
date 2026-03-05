@@ -56,8 +56,9 @@ public:
 
   // 1. CONFIGURATION: Pass the GreekMode, S0, and h to compute the 3 barriers
   template <GreekMode Mode>
-  typename Tracker::Config get_tracker_config(double S0 = 100.0,
-                                              double h = 0.0) const {
+  typename Tracker::Config
+  get_tracker_config(double S0 = 100.0, double h = 0.0,
+                     [[maybe_unused]] double T_bumped = 0.0) const {
     typename Tracker::Config cfg;
     cfg.barrier_log_base = std::log(barrier_);
 
