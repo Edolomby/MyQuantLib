@@ -62,6 +62,9 @@ public:
         results.vega[1].reserve(instr.size());
         results.theta.reserve(instr.size());
         results.rho.reserve(instr.size());
+        results.vanna[0].reserve(instr.size());
+        results.vanna[1].reserve(instr.size());
+        results.charm.reserve(instr.size());
       }
 
       for (double K : instr.get_strikes()) {
@@ -79,6 +82,9 @@ public:
           results.vega[1].push_back(sr.vega[1]);
           results.theta.push_back(sr.theta);
           results.rho.push_back(sr.rho);
+          results.vanna[0].push_back(sr.vanna[0]);
+          results.vanna[1].push_back(sr.vanna[1]);
+          results.charm.push_back(sr.charm);
         }
       }
       return results;
@@ -142,7 +148,6 @@ private:
 
       if constexpr (Mode == GreekMode::Full) {
         // --- Vega factor 0 ---
-        // d(price)/dv0 = S0*df_q*dP1/dv0 - K*df_r*dP2/dv0  (same for call/put)
         GilPelaezKernel<KernelTarget::Vega, Model, Traits, 0> kv0_P1(
             model, T, r, q, K_norm, false);
         GilPelaezKernel<KernelTarget::Vega, Model, Traits, 0> kv0_P2(
@@ -152,7 +157,7 @@ private:
         result.vega[0] = (S0 * df_q * dP1_dv0 - K * df_r * dP2_dv0) *
                          Traits::template vega_chain_factor<0>(model);
 
-        // --- Vega factor 1 (non-zero only for DoubleFactorModel) ---
+        // --- Vega factor 1 ---
         if constexpr (nf >= 2) {
           GilPelaezKernel<KernelTarget::Vega, Model, Traits, 1> kv1_P1(
               model, T, r, q, K_norm, false);
@@ -165,9 +170,6 @@ private:
         }
 
         // --- Theta: d(price)/dT ---
-        // d(price_call)/dT = S0*df_q*(-q*P1 + dP1/dT) + K*df_r*(r*P2 - dP2/dT)
-        // d(price_put)/dT  = K*df_r*(r*(1-P2) - dP2/dT) + S0*df_q*(q*(1-P1) +
-        // dP1/dT)
         GilPelaezKernel<KernelTarget::Theta, Model, Traits> kt_P1(
             model, T, r, q, K_norm, false);
         GilPelaezKernel<KernelTarget::Theta, Model, Traits> kt_P2(
@@ -183,8 +185,6 @@ private:
         }
 
         // --- Rho: d(price)/dr ---
-        // d(price_call)/dr = S0*df_q*dP1/dr + T*K*df_r*P2 - K*df_r*dP2/dr
-        // d(price_put)/dr  = S0*df_q*dP1/dr - T*K*df_r*(1-P2) - K*df_r*dP2/dr
         GilPelaezKernel<KernelTarget::Rho, Model, Traits> kr_P1(model, T, r, q,
                                                                 K_norm, false);
         GilPelaezKernel<KernelTarget::Rho, Model, Traits> kr_P2(model, T, r, q,
@@ -195,6 +195,32 @@ private:
                                ? (T * K * df_r * P2)
                                : (-T * K * df_r * (1.0 - P2));
         result.rho = S0 * df_q * dP1_dr + disc_term - K * df_r * dP2_dr;
+
+        // --- Vanna: ∂Delta/∂σᵢ ---
+        // Delta_call = df_q * P1  =>  vanna_call = df_q * ∂P1/∂v0
+        // dP1_dv0 is already computed in the Vega block above.
+        result.vanna[0] =
+            df_q * dP1_dv0 * Traits::template vega_chain_factor<0>(model);
+        if constexpr (nf >= 2) {
+          // Re-evaluate dP1/dv1 (was scoped inside the vega nf>=2 block)
+          GilPelaezKernel<KernelTarget::Vega, Model, Traits, 1> kv1_vanna(
+              model, T, r, q, K_norm, false);
+          double dP1_dv1_local =
+              engine.calculate_integral(kv1_vanna, T) * INV_PI;
+          result.vanna[1] = df_q * dP1_dv1_local *
+                            Traits::template vega_chain_factor<1>(model);
+        }
+
+        // --- Charm: ∂Delta/∂T ---
+        // Delta_call = df_q * P1  =>  ∂/∂T[df_q*P1] = df_q*(-q*P1 + dP1/dT)
+        // dP1_dT is already computed in the Theta block above.
+        if (OT == OptionType::Call) {
+          result.charm = df_q * (-q * P1 + dP1_dT);
+        } else {
+          // Delta_put = df_q * (P1 - 1)  =>  charm_put = df_q*(-q*(P1-1) +
+          // dP1/dT)
+          result.charm = df_q * (-q * (P1 - 1.0) + dP1_dT);
+        }
       }
 
       // -------------------------------------------------------------------------
@@ -235,19 +261,49 @@ private:
                            Traits::template vega_chain_factor<1>(model);
         }
 
-        // --- Theta: d(df_r * base_prob)/dT ---
-        // = df_r * (r * base_prob negated + sign * dP2/dT)
+        // --- Theta ---
         GilPelaezKernel<KernelTarget::Theta, Model, Traits> kt(model, T, r, q,
                                                                K_norm, true);
         double dP2_dT = engine.calculate_integral(kt, T) * INV_PI;
         result.theta = df_r * (sign * dP2_dT - r * base_prob);
 
-        // --- Rho: d(df_r * base_prob)/dr ---
-        // = -T*df_r*base_prob + df_r*sign*dP2/dr
+        // --- Rho ---
         GilPelaezKernel<KernelTarget::Rho, Model, Traits> kr(model, T, r, q,
                                                              K_norm, true);
         double dP2_dr = engine.calculate_integral(kr, T) * INV_PI;
         result.rho = df_r * (sign * dP2_dr - T * base_prob);
+
+        // --- Vanna: dDelta/dsigma_i ---
+        // Delta = sign * df_r * I_x / S0, d/dv0 = sign * df_r * VDx0 / S0
+        GilPelaezKernel<KernelTarget::VegaDx, Model, Traits, 0> kvdx0(
+            model, T, r, q, K_norm, true);
+        double VDx0 = engine.calculate_integral(kvdx0, T) * INV_PI;
+        result.vanna[0] = sign * df_r * VDx0 / S0 *
+                          Traits::template vega_chain_factor<0>(model);
+        if constexpr (nf >= 2) {
+          GilPelaezKernel<KernelTarget::VegaDx, Model, Traits, 1> kvdx1(
+              model, T, r, q, K_norm, true);
+          double VDx1 = engine.calculate_integral(kvdx1, T) * INV_PI;
+          result.vanna[1] = sign * df_r * VDx1 / S0 *
+                            Traits::template vega_chain_factor<1>(model);
+        }
+
+        // --- Charm: dDelta/dT ---
+        // Delta = sign * df_r * I_x / S0
+        // d/dT = sign * df_r * (TDx / S0 - r * I_x / S0)
+        //       + sign * (-r*df_r) * I_x / S0  ... combined:
+        // = sign * df_r * (TDx/S0 - r*I_x/S0) + sign*(-r*df_r)*I_x/S0
+        // Simplify: d/dT[df_r * I_x] = df_r*(TDx - r*I_x), /S0
+        GilPelaezKernel<KernelTarget::ThetaDx, Model, Traits> ktdx(
+            model, T, r, q, K_norm, true);
+        double TDx = engine.calculate_integral(ktdx, T) * INV_PI;
+        // Recompute I_x for P2 (already have it above)
+        double I_x_P2 = engine.calculate_integral(
+                            GilPelaezKernel<KernelTarget::Dx, Model, Traits>(
+                                model, T, r, q, K_norm, true),
+                            T) *
+                        INV_PI;
+        result.charm = sign * df_r * (TDx - r * I_x_P2) / S0;
       }
 
       // -------------------------------------------------------------------------
@@ -288,20 +344,56 @@ private:
                            Traits::template vega_chain_factor<1>(model);
         }
 
-        // --- Theta: d(S0*df_q*base_prob)/dT ---
-        // = S0 * df_q * (-q * base_prob + sign * dP1/dT)
+        // --- Theta ---
         GilPelaezKernel<KernelTarget::Theta, Model, Traits> kt(model, T, r, q,
                                                                K_norm, false);
         double dP1_dT = engine.calculate_integral(kt, T) * INV_PI;
         result.theta = S0 * df_q * (-q * base_prob + sign * dP1_dT);
 
-        // --- Rho: d(S0*df_q*base_prob)/dr ---
-        // df_q = exp(-q*T) does not depend on r, so:
-        // d/dr = S0*df_q*sign*dP1/dr
+        // --- Rho ---
         GilPelaezKernel<KernelTarget::Rho, Model, Traits> kr(model, T, r, q,
                                                              K_norm, false);
         double dP1_dr = engine.calculate_integral(kr, T) * INV_PI;
         result.rho = S0 * df_q * sign * dP1_dr;
+
+        // --- Vanna: dDelta/dsigma_i ---
+        // Delta = df_q*(base_prob + sign*I_x)
+        // where base_prob = sign*P1 (call) -> dbase_prob/dv0 = sign*dP1/dv0
+        // dDelta/dv0 = df_q*(sign*dP1/dv0 + sign*VDx0/S0... )
+        // More precisely, I_x = integral of Dx kernel on P1, so:
+        // dI_x/dv0 = VDx0 integral. But dbase_prob/dv0 = sign * dP1/dv0.
+        // So dDelta/dv0 = df_q*(sign*dP1_dv0 + sign*VDx0)
+        GilPelaezKernel<KernelTarget::VegaDx, Model, Traits, 0> kvdx0(
+            model, T, r, q, K_norm, false);
+        double VDx0 = engine.calculate_integral(kvdx0, T) * INV_PI;
+        result.vanna[0] = df_q * sign * (dP1_dv0 + VDx0) *
+                          Traits::template vega_chain_factor<0>(model);
+        if constexpr (nf >= 2) {
+          // Re-evaluate dP1/dv1 (scoped inside vega factor 1 block above)
+          GilPelaezKernel<KernelTarget::Vega, Model, Traits, 1> kv1_vanna(
+              model, T, r, q, K_norm, false);
+          double dP1_dv1_vanna =
+              engine.calculate_integral(kv1_vanna, T) * INV_PI;
+          GilPelaezKernel<KernelTarget::VegaDx, Model, Traits, 1> kvdx1(
+              model, T, r, q, K_norm, false);
+          double VDx1 = engine.calculate_integral(kvdx1, T) * INV_PI;
+          result.vanna[1] = df_q * sign * (dP1_dv1_vanna + VDx1) *
+                            Traits::template vega_chain_factor<1>(model);
+        }
+
+        // --- Charm: dDelta/dT ---
+        // Delta = df_q * (base_prob + sign*I_x)
+        // d/dT: df_q*(-q*(base_prob + sign*I_x) + sign*dP1/dT + sign*TDx)
+        GilPelaezKernel<KernelTarget::ThetaDx, Model, Traits> ktdx(
+            model, T, r, q, K_norm, false);
+        double TDx = engine.calculate_integral(ktdx, T) * INV_PI;
+        double I_x_P1 = engine.calculate_integral(
+                            GilPelaezKernel<KernelTarget::Dx, Model, Traits>(
+                                model, T, r, q, K_norm, false),
+                            T) *
+                        INV_PI;
+        result.charm = df_q * (-q * (base_prob + sign * I_x_P1) +
+                               sign * dP1_dT + sign * TDx);
       }
 
     } else {

@@ -63,7 +63,6 @@ public:
     cfg.barrier_log_base = std::log(barrier_);
 
     if constexpr (Mode == GreekMode::Essential || Mode == GreekMode::Full) {
-      // Inversely scale the barriers!
       cfg.barrier_log_up = std::log(barrier_ * S0 / (S0 + h));
       cfg.barrier_log_dn = std::log(barrier_ * S0 / (S0 - h));
     } else {

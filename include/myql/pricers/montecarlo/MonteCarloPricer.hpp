@@ -115,6 +115,38 @@ public:
     // barriers)
     const auto tracker_cfg = instr.template get_tracker_config<Mode>(S0, h);
 
+    // Provide storage for bumped workspaces in Full mode
+    using Traits = AffineTraits<Model>;
+    constexpr int nf = Model::num_variance_factors;
+
+    typename Stepper::VolGlobalWorkspace wksp_vup0, wksp_vdn0;
+    typename Stepper::VolGlobalWorkspace wksp_vup1, wksp_vdn1;
+    typename Stepper::VolGlobalWorkspace wksp_Tup, wksp_Tdn;
+
+    double Tup = T + cfg_.t_bump;
+    double Tdn = T - cfg_.t_bump;
+    auto m_vup0 = model_;
+    auto m_vdn0 = model_;
+    auto m_vup1 = model_;
+    auto m_vdn1 = model_;
+
+    if constexpr (Mode == GreekMode::Full) {
+      m_vup0 = Traits::template bump_v0<0>(model_, cfg_.vol_bump);
+      m_vdn0 = Traits::template bump_v0<0>(model_, -cfg_.vol_bump);
+      wksp_vup0 = Stepper::build_global_workspace(m_vup0, dt);
+      wksp_vdn0 = Stepper::build_global_workspace(m_vdn0, dt);
+
+      if constexpr (nf >= 2) {
+        m_vup1 = Traits::template bump_v0<1>(model_, cfg_.vol_bump);
+        m_vdn1 = Traits::template bump_v0<1>(model_, -cfg_.vol_bump);
+        wksp_vup1 = Stepper::build_global_workspace(m_vup1, dt);
+        wksp_vdn1 = Stepper::build_global_workspace(m_vdn1, dt);
+      }
+
+      wksp_Tup = Stepper::build_global_workspace(model_, Tup / steps);
+      wksp_Tdn = Stepper::build_global_workspace(model_, Tdn / steps);
+    }
+
     // GLOBAL ACCUMULATORS
     ResultType g_sum_price, g_sq_sum_price;
     ResultType g_sum_delta, g_sq_sum_delta;
@@ -139,12 +171,17 @@ public:
     std::array<ResultType, 2> g_sum_vega, g_sq_sum_vega;
     ResultType g_sum_theta, g_sq_sum_theta;
     ResultType g_sum_rho, g_sq_sum_rho;
+    std::array<ResultType, 2> g_sum_vanna, g_sq_sum_vanna;
+    ResultType g_sum_charm, g_sq_sum_charm;
 
     if constexpr (Mode == GreekMode::Full) {
       init_accumulators(g_sum_vega[0], g_sq_sum_vega[0]);
       init_accumulators(g_sum_vega[1], g_sq_sum_vega[1]);
       init_accumulators(g_sum_theta, g_sq_sum_theta);
       init_accumulators(g_sum_rho, g_sq_sum_rho);
+      init_accumulators(g_sum_vanna[0], g_sq_sum_vanna[0]);
+      init_accumulators(g_sum_vanna[1], g_sq_sum_vanna[1]);
+      init_accumulators(g_sum_charm, g_sq_sum_charm);
     }
 
     // PARALLEL REGION
@@ -161,6 +198,8 @@ public:
       std::array<ResultType, 2> l_sum_vega, l_sq_sum_vega;
       ResultType l_sum_theta, l_sq_sum_theta;
       ResultType l_sum_rho, l_sq_sum_rho;
+      std::array<ResultType, 2> l_sum_vanna, l_sq_sum_vanna;
+      ResultType l_sum_charm, l_sq_sum_charm;
 
       auto init_locals = [&](ResultType &sum, ResultType &sq, ResultType &buf) {
         if constexpr (std::is_same_v<ResultType, double>) {
@@ -185,8 +224,12 @@ public:
         init_locals(l_sum_vega[1], l_sq_sum_vega[1], dummy_buf);
         init_locals(l_sum_theta, l_sq_sum_theta, dummy_buf);
         init_locals(l_sum_rho, l_sq_sum_rho, dummy_buf);
+        init_locals(l_sum_vanna[0], l_sq_sum_vanna[0], dummy_buf);
+        init_locals(l_sum_vanna[1], l_sq_sum_vanna[1], dummy_buf);
+        init_locals(l_sum_charm, l_sq_sum_charm, dummy_buf);
       }
 
+      // Lambda: run a bumped path and return only the base payoff
       auto run_path_only = [&](auto &step_obj, const auto &t_cfg, RNG &path_rng,
                                ResultType &out_p) {
         typename Stepper::State st;
@@ -196,10 +239,21 @@ public:
         instr.template calculate_to_buffer<Mode>(st, S0, h, out_p, d1, d2);
       };
 
+      // Lambda: run a bumped path and also expose d1/d2 for vanna/charm
+      auto run_path_with_bumps = [&](auto &step_obj, const auto &t_cfg,
+                                     RNG &path_rng, ResultType &out_p,
+                                     ResultType &out_d1, ResultType &out_d2) {
+        typename Stepper::State st;
+        step_obj.start_path(st, t_cfg, S0);
+        step_obj.multi_step(st, t_cfg, path_rng, steps);
+        instr.template calculate_to_buffer<Mode>(st, S0, h, out_p, out_d1,
+                                                 out_d2);
+      };
+
       if constexpr (Mode != GreekMode::Full) {
-        // ---------------------------------------------------------------------
+        // -------------------------------------------------------------------
         // NON-FULL MODE (Price, Essential)
-        // ---------------------------------------------------------------------
+        // -------------------------------------------------------------------
 #pragma omp for schedule(static) nowait
         for (size_t i = 0; i < M; ++i) {
           stepper_base.start_path(state_base, tracker_cfg, S0);
@@ -222,31 +276,21 @@ public:
           }
         }
       } else {
-        // ---------------------------------------------------------------------
+        // -------------------------------------------------------------------
         // FULL MODE: Instantiate Bumped Steppers
-        // ---------------------------------------------------------------------
-        using Traits = AffineTraits<Model>;
-        constexpr int nf = Model::num_variance_factors;
+        // -------------------------------------------------------------------
 
         // Vega 0 Steppers
-        auto m_vup0 = Traits::template bump_v0<0>(model_, cfg_.vol_bump);
-        auto m_vdn0 = Traits::template bump_v0<0>(model_, -cfg_.vol_bump);
-        Stepper stp_vup0(m_vup0, dt, r, q, T,
-                         Stepper::build_global_workspace(m_vup0, dt));
-        Stepper stp_vdn0(m_vdn0, dt, r, q, T,
-                         Stepper::build_global_workspace(m_vdn0, dt));
+        Stepper stp_vup0(m_vup0, dt, r, q, T, wksp_vup0);
+        Stepper stp_vdn0(m_vdn0, dt, r, q, T, wksp_vdn0);
 
-        // Theta Steppers (bump T -> bump dt to keep steps constant for CRN)
-        double Tup = T + cfg_.t_bump;
-        double Tdn = T - cfg_.t_bump;
+        // Theta Steppers
         auto tcfg_up = instr.template get_tracker_config<Mode>(S0, h, Tup);
         auto tcfg_dn = instr.template get_tracker_config<Mode>(S0, h, Tdn);
-        Stepper stp_Tup(model_, Tup / steps, r, q, Tup,
-                        Stepper::build_global_workspace(model_, Tup / steps));
-        Stepper stp_Tdn(model_, Tdn / steps, r, q, Tdn,
-                        Stepper::build_global_workspace(model_, Tdn / steps));
+        Stepper stp_Tup(model_, Tup / steps, r, q, Tup, wksp_Tup);
+        Stepper stp_Tdn(model_, Tdn / steps, r, q, Tdn, wksp_Tdn);
 
-        // Rho Steppers (bump r)
+        // Rho Steppers
         Stepper stp_rup(model_, dt, r + cfg_.r_bump, q, T, shared_vol_wksp);
         Stepper stp_rdn(model_, dt, r - cfg_.r_bump, q, T, shared_vol_wksp);
 
@@ -277,56 +321,89 @@ public:
           l_sum_gamma += path_gamma;
           l_sq_sum_gamma += path_gamma * path_gamma;
 
-          // 2. Vega Factor 0
-          ResultType p_vup0, p_vdn0;
-          RNG rng_v0up = rng_start;
-          run_path_only(stp_vup0, tracker_cfg, rng_v0up, p_vup0);
-          RNG rng_v0dn = rng_start;
-          run_path_only(stp_vdn0, tracker_cfg, rng_v0dn, p_vdn0);
+          // 2. Vega Factor 0 — also capture d1/d2 for vanna
+          ResultType p_vup0, d1_vup0, d2_vup0;
+          ResultType p_vdn0, d1_vdn0, d2_vdn0;
+          {
+            RNG rng_v0up = rng_start;
+            run_path_with_bumps(stp_vup0, tracker_cfg, rng_v0up, p_vup0,
+                                d1_vup0, d2_vup0);
+            RNG rng_v0dn = rng_start;
+            run_path_with_bumps(stp_vdn0, tracker_cfg, rng_v0dn, p_vdn0,
+                                d1_vdn0, d2_vdn0);
+          }
           ResultType path_vega0 = (p_vup0 - p_vdn0) * inv_2dv * c_v0;
           l_sum_vega[0] += path_vega0;
           l_sq_sum_vega[0] += path_vega0 * path_vega0;
 
-          // 3. Vega Factor 1 (nested for performance)
+          // vanna[0] = ∂Delta/∂σ₀
+          ResultType path_vanna0 = ((d1_vup0 - d2_vup0) - (d1_vdn0 - d2_vdn0)) *
+                                   (inv_2dv / (2.0 * h)) * c_v0;
+          l_sum_vanna[0] += path_vanna0;
+          l_sq_sum_vanna[0] += path_vanna0 * path_vanna0;
+
+          // 3. Vega Factor 1 (if double-factor model)
           if constexpr (nf >= 2) {
-            auto m_vup1 = Traits::template bump_v0<1>(model_, cfg_.vol_bump);
-            auto m_vdn1 = Traits::template bump_v0<1>(model_, -cfg_.vol_bump);
-            Stepper stp_vup1(m_vup1, dt, r, q, T,
-                             Stepper::build_global_workspace(m_vup1, dt));
-            Stepper stp_vdn1(m_vdn1, dt, r, q, T,
-                             Stepper::build_global_workspace(m_vdn1, dt));
+            Stepper stp_vup1(m_vup1, dt, r, q, T, wksp_vup1);
+            Stepper stp_vdn1(m_vdn1, dt, r, q, T, wksp_vdn1);
             double c_v1 = Traits::template vega_chain_factor<1>(model_);
 
-            ResultType p_vup1, p_vdn1;
-            RNG rng_v1up = rng_start;
-            run_path_only(stp_vup1, tracker_cfg, rng_v1up, p_vup1);
-            RNG rng_v1dn = rng_start;
-            run_path_only(stp_vdn1, tracker_cfg, rng_v1dn, p_vdn1);
+            ResultType p_vup1, d1_vup1, d2_vup1;
+            ResultType p_vdn1, d1_vdn1, d2_vdn1;
+            {
+              RNG rng_v1up = rng_start;
+              run_path_with_bumps(stp_vup1, tracker_cfg, rng_v1up, p_vup1,
+                                  d1_vup1, d2_vup1);
+              RNG rng_v1dn = rng_start;
+              run_path_with_bumps(stp_vdn1, tracker_cfg, rng_v1dn, p_vdn1,
+                                  d1_vdn1, d2_vdn1);
+            }
             ResultType path_vega1 = (p_vup1 - p_vdn1) * inv_2dv * c_v1;
             l_sum_vega[1] += path_vega1;
             l_sq_sum_vega[1] += path_vega1 * path_vega1;
+
+            // vanna[1] = ∂Delta/∂σ₁
+            ResultType path_vanna1 =
+                ((d1_vup1 - d2_vup1) - (d1_vdn1 - d2_vdn1)) *
+                (inv_2dv / (2.0 * h)) * c_v1;
+            l_sum_vanna[1] += path_vanna1;
+            l_sq_sum_vanna[1] += path_vanna1 * path_vanna1;
           }
 
-          // 4. Theta (Requires differential discounting relative to base T)
-          ResultType p_Tup, p_Tdn;
-          RNG rng_Tup = rng_start;
-          run_path_only(stp_Tup, tcfg_up, rng_Tup, p_Tup);
-          RNG rng_Tdn = rng_start;
-          run_path_only(stp_Tdn, tcfg_dn, rng_Tdn, p_Tdn);
-          double df_Tup = std::exp(-r * cfg_.t_bump); // e^{-r(T+dT)} / e^{-rT}
-          double df_Tdn = std::exp(r * cfg_.t_bump);  // e^{-r(T-dT)} / e^{-rT}
+          // 4. Theta — also capture d1/d2 for charm
+          ResultType p_Tup, d1_Tup, d2_Tup;
+          ResultType p_Tdn, d1_Tdn, d2_Tdn;
+          {
+            RNG rng_Tup = rng_start;
+            run_path_with_bumps(stp_Tup, tcfg_up, rng_Tup, p_Tup, d1_Tup,
+                                d2_Tup);
+            RNG rng_Tdn = rng_start;
+            run_path_with_bumps(stp_Tdn, tcfg_dn, rng_Tdn, p_Tdn, d1_Tdn,
+                                d2_Tdn);
+          }
+          double df_Tup = std::exp(-r * cfg_.t_bump);
+          double df_Tdn = std::exp(r * cfg_.t_bump);
           ResultType path_theta = (p_Tup * df_Tup - p_Tdn * df_Tdn) * inv_2dT;
           l_sum_theta += path_theta;
           l_sq_sum_theta += path_theta * path_theta;
 
-          // 5. Rho (Requires differential discounting relative to base r)
+          // charm = ∂Delta/∂T
+          ResultType path_charm =
+              ((d1_Tup - d2_Tup) * df_Tup - (d1_Tdn - d2_Tdn) * df_Tdn) *
+              (inv_2dT / (2.0 * h));
+          l_sum_charm += path_charm;
+          l_sq_sum_charm += path_charm * path_charm;
+
+          // 5. Rho
+          double df_rup = std::exp(-cfg_.r_bump * T);
+          double df_rdn = std::exp(cfg_.r_bump * T);
           ResultType p_rup, p_rdn;
-          RNG rng_rup = rng_start;
-          run_path_only(stp_rup, tracker_cfg, rng_rup, p_rup);
-          RNG rng_rdn = rng_start;
-          run_path_only(stp_rdn, tracker_cfg, rng_rdn, p_rdn);
-          double df_rup = std::exp(-cfg_.r_bump * T); // e^{-(r+dr)T} / e^{-rT}
-          double df_rdn = std::exp(cfg_.r_bump * T);  // e^{-(r-dr)T} / e^{-rT}
+          {
+            RNG rng_rup = rng_start;
+            run_path_only(stp_rup, tracker_cfg, rng_rup, p_rup);
+            RNG rng_rdn = rng_start;
+            run_path_only(stp_rdn, tracker_cfg, rng_rdn, p_rdn);
+          }
           ResultType path_rho = (p_rup * df_rup - p_rdn * df_rdn) * inv_2dr;
           l_sum_rho += path_rho;
           l_sq_sum_rho += path_rho * path_rho;
@@ -353,6 +430,12 @@ public:
           g_sq_sum_theta += l_sq_sum_theta;
           g_sum_rho += l_sum_rho;
           g_sq_sum_rho += l_sq_sum_rho;
+          g_sum_vanna[0] += l_sum_vanna[0];
+          g_sq_sum_vanna[0] += l_sq_sum_vanna[0];
+          g_sum_vanna[1] += l_sum_vanna[1];
+          g_sq_sum_vanna[1] += l_sq_sum_vanna[1];
+          g_sum_charm += l_sum_charm;
+          g_sq_sum_charm += l_sq_sum_charm;
         }
       }
     } // End Parallel
@@ -387,6 +470,11 @@ public:
                     res.vega_std_err[1]);
       compute_stats(g_sum_theta, g_sq_sum_theta, res.theta, res.theta_std_err);
       compute_stats(g_sum_rho, g_sq_sum_rho, res.rho, res.rho_std_err);
+      compute_stats(g_sum_vanna[0], g_sq_sum_vanna[0], res.vanna[0],
+                    res.vanna_std_err[0]);
+      compute_stats(g_sum_vanna[1], g_sq_sum_vanna[1], res.vanna[1],
+                    res.vanna_std_err[1]);
+      compute_stats(g_sum_charm, g_sq_sum_charm, res.charm, res.charm_std_err);
     }
 
     return res;

@@ -8,9 +8,11 @@
 - **Zero-Runtime-Overhead Architecture**: Every model, instrument, and pricing scheme is resolved at compile time, eliminating expensive virtual function calls in hot loops.
 - **Symmetric Pricing API**: Both the Fourier and Monte Carlo engines expose an identical, easy-to-use API (`.calculate(S0, r, q, instrument)`).
 - **Comprehensive Greeks Support**:
-  - *Analytical Greeks* via Fourier pricing (`GreekMode::Essential` for Delta/Gamma, `GreekMode::Full` for Vega/Theta/Rho).
-  - *Pathwise Finite Differences* for Monte Carlo (`GreekMode::Essential` for Delta/Gamma).
-  - *Exact Common Random Numbers (CRN)* for Monte Carlo Full Greeks, enabling mathematically exact variance reduction for Vega, Theta, and Rho via a synchronized multi-stepper architecture.
+  - *Analytical Greeks* via Fourier pricing: `GreekMode::Essential` (Delta, Gamma) and `GreekMode::Full` (Delta, Gamma, Vega, Theta, Rho, **Vanna**, **Charm**).
+  - *Pathwise / CRN Monte Carlo Greeks*: same `GreekMode` enum controls both engines symmetrically.
+  - In `GreekMode::Full`, **Vanna** (∂Delta/∂σᵢ) is extracted from the vol-bumped paths already run for Vega, and **Charm** (∂Delta/∂T) is extracted from the T-bumped paths already run for Theta — both at **zero extra simulation cost** — by additionally capturing the S-bumped payoffs from those paths via the `run_path_with_bumps` lambda.
+  - *Exact Common Random Numbers (CRN)*: synchronized multi-stepper architecture minimizes variance for all cross-Greeks.
+  - **Payoff smoothing** (erfc-based Gaussian kernel) is applied automatically for discontinuous payoffs (digital options) in `Essential` and `Full` modes to prevent variance explosions in pathwise Delta/Gamma estimators.
 - **Runtime Dispatch Layer**: Includes a `std::variant`-based boundary layer allowing model and instrument selection purely from runtime strings (e.g. JSON/CSV parsing) while retaining the zero-overhead engine core.
 - **Vectorized Evaluation**: Support for pricing "strips" of options across multiple strikes/maturities simultaneously (Struct-of-Arrays pattern).
 - **Parallel Computing**: Fully utilizes OpenMP for robust Monte Carlo path simulation.
@@ -179,7 +181,7 @@ int main() {
 
 ### Example 3: Essential and Full Greeks Calculation
 
-By upgrading the `GreekMode` template parameter, the engines automatically accumulate and return derivatives. In `GreekMode::Full`, the Monte Carlo engine uses an advanced single-loop architecture to compute Vega, Theta, and Rho using exact Common Random Numbers (CRN), minimizing standard errors.
+By upgrading the `GreekMode` template parameter, the engines automatically accumulate and return derivatives. In `GreekMode::Full`, the Monte Carlo engine uses a single-loop CRN architecture: it runs extra vol-bumped paths for Vega, T-bumped paths for Theta, and r-bumped paths for Rho. **Vanna** (∂Delta/∂σᵢ) and **Charm** (∂Delta/∂T) are then extracted at **zero additional path cost** by reusing the S-bumped payoffs already captured on those vol/T-bumped paths.
 
 ```cpp
 #include <iostream>
@@ -193,24 +195,30 @@ void calculate_greeks(const HestonModel& model, const CallVanilla& option) {
     double S0 = 100.0, r = 0.05, q = 0.02;
     MonteCarloConfig mc_cfg{200000, 100, 42};
 
-    // Calculate MC Full Greeks
+    // Monte Carlo Full Greeks
     using Stepper = ASVJStepper<SchemeExact, NullVolScheme, NoJumps, TrackerEuropean>;
     MonteCarloPricer<HestonModel, Stepper, CallVanilla, GreekMode::Full> mc_pricer(model, mc_cfg);
     auto res_mc = mc_pricer.calculate(S0, r, q, option);
 
-    std::cout << "MC Delta: " << res_mc.delta << " +- " << res_mc.delta_std_err << "\n";
-    std::cout << "MC Gamma: " << res_mc.gamma << " +- " << res_mc.gamma_std_err << "\n";
-    std::cout << "MC Vega:  " << res_mc.vega[0] << " +- " << res_mc.vega_std_err[0] << "\n";
-    std::cout << "MC Theta: " << res_mc.theta << " +- " << res_mc.theta_std_err << "\n";
+    std::cout << "MC Delta:  " << res_mc.delta  << " +- " << res_mc.delta_std_err  << "\n";
+    std::cout << "MC Gamma:  " << res_mc.gamma  << " +- " << res_mc.gamma_std_err  << "\n";
+    std::cout << "MC Vega:   " << res_mc.vega[0] << " +- " << res_mc.vega_std_err[0] << "\n";
+    std::cout << "MC Theta:  " << res_mc.theta  << " +- " << res_mc.theta_std_err  << "\n";
+    std::cout << "MC Rho:    " << res_mc.rho    << " +- " << res_mc.rho_std_err    << "\n";
+    std::cout << "MC Vanna:  " << res_mc.vanna[0] << " +- " << res_mc.vanna_std_err[0] << "\n";  // NEW
+    std::cout << "MC Charm:  " << res_mc.charm  << " +- " << res_mc.charm_std_err  << "\n";  // NEW
 
-    // Calculate Analytical Fourier Full Greeks
+    // Fourier Full Greeks (analytical, includes Vanna & Charm)
     FourierPricer<HestonModel, CallVanilla, GreekMode::Full> fourier_pricer(model);
-    auto res_fourier = fourier_pricer.calculate(S0, r, q, option);
+    auto res_f = fourier_pricer.calculate(S0, r, q, option);
 
-    std::cout << "\nAnalytical Delta: " << res_fourier.delta << "\n";
-    std::cout << "Analytical Gamma: " << res_fourier.gamma << "\n";
-    std::cout << "Analytical Vega:  " << res_fourier.vega[0] << "\n";
-    std::cout << "Analytical Theta: " << res_fourier.theta << "\n";
+    std::cout << "\nFourier Delta: " << res_f.delta    << "\n";
+    std::cout << "Fourier Gamma: " << res_f.gamma    << "\n";
+    std::cout << "Fourier Vega:  " << res_f.vega[0]  << "\n";
+    std::cout << "Fourier Theta: " << res_f.theta    << "\n";
+    std::cout << "Fourier Rho:   " << res_f.rho      << "\n";
+    std::cout << "Fourier Vanna: " << res_f.vanna[0] << "\n";  // NEW
+    std::cout << "Fourier Charm: " << res_f.charm    << "\n";  // NEW
 }
 ```
 
@@ -309,6 +317,7 @@ res.prices[i];           // always present
 res.deltas[i];           // GreekMode::Essential or ::Full
 res.gammas[i];           // GreekMode::Essential or ::Full
 res.prices_std_err[i];   // MC only
+// GreekMode::Full also populates: vegas, thetas, rhos, vannas, charms
 ```
 
 > **Stepper deduction is automatic** — `StepperTraits.hpp` inspects the model type to determine the number of CIR factors and jump policy, and wires the correct `ASVJStepper` template. You never specify it manually.

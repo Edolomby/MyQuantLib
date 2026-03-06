@@ -1,5 +1,4 @@
-// Verification benchmark: Compare Monte Carlo Full Greeks to Fourier Full
-// Greeks
+// Verification benchmark: Compare Monte Carlo Full Greeks to Fourier
 #include <cmath>
 #include <myql/instruments/Payoffs.hpp>
 #include <myql/instruments/options/European.hpp>
@@ -22,25 +21,29 @@ double rel_err(double mc, double ana) {
   return std::abs(mc - ana) / (std::abs(ana) + 1e-10);
 }
 
+// =============================================================================
+// Full Greek comparison (includes vanna + charm)
+// =============================================================================
 template <typename ModelT, typename StepperT>
 void compare_mc_vs_fourier(const char *label, const ModelT &model) {
   using InstrT = EuropeanOption<PayoffVanilla<OptionType::Call>>;
   InstrT opt(K, T);
 
-  // 1. Fourier Baseline
+  // Fourier Baseline
   FourierEngine::Config f_cfg;
   f_cfg.tolerance = 1e-10;
   FourierPricer<ModelT, InstrT, GreekMode::Full> f_pricer(model, f_cfg);
   auto f_full = f_pricer.calculate(S0, r, q, opt);
 
-  // 2. Monte Carlo Setup
+  // Monte Carlo Setup
   MonteCarloConfig mc_cfg;
-  mc_cfg.num_paths = 500000;
+  mc_cfg.num_paths = 10'000'000;
   mc_cfg.time_steps = 100;
   mc_cfg.seed = 42;
   mc_cfg.fd_bump = 1e-4;
   mc_cfg.vol_bump = 1e-4;
-  mc_cfg.t_bump = 1e-4;
+  mc_cfg.t_bump =
+      1e-2; // smaller to reduce the variance of theta/charm in Jump models
   mc_cfg.r_bump = 1e-4;
 
   MonteCarloPricer<ModelT, StepperT, InstrT, GreekMode::Full> mc_pricer(model,
@@ -89,10 +92,20 @@ void compare_mc_vs_fourier(const char *label, const ModelT &model) {
   }
   add_row("Theta", f_full.theta, m_full.theta, m_full.theta_std_err);
   add_row("Rho", f_full.rho, m_full.rho, m_full.rho_std_err);
+  add_row("Vanna[0]", f_full.vanna[0], m_full.vanna[0],
+          m_full.vanna_std_err[0]);
+  if constexpr (ModelT::num_variance_factors >= 2) {
+    add_row("Vanna[1]", f_full.vanna[1], m_full.vanna[1],
+            m_full.vanna_std_err[1]);
+  }
+  add_row("Charm", f_full.charm, m_full.charm, m_full.charm_std_err);
 
-  std::printf("\n=============================================\n");
-  std::printf("  %s - MC (500k paths) vs Fourier\n", label);
-  std::printf("=============================================\n");
+  std::printf(
+      "\n=================================================================\n");
+  std::printf("  %s - Full Greeks: MC (%zu paths) vs Fourier\n", label,
+              mc_cfg.num_paths);
+  std::printf(
+      "=================================================================\n");
 
   myql::utils::printVectors(
       myql::utils::TableConfig{myql::utils::FloatFormat::Fixed, 6},

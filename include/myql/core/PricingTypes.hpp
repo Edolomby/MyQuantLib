@@ -7,7 +7,7 @@
 enum class GreekMode {
   None,      // Just Price
   Essential, // Price, Delta, Gamma
-  Full       // Price, Delta, Gamma, Vega, Theta, Rho
+  Full,      // Price, Delta, Gamma, Vega, Theta, Rho, Vanna, Charm
 };
 
 // =============================================================================
@@ -34,6 +34,9 @@ template <typename T> struct FourierResult<GreekMode::Full, T> {
   std::array<T, 2> vega{};
   T theta{};
   T rho{};
+  // Cross-Greeks (∂/∂S of vol/time Greeks)
+  std::array<T, 2> vanna{}; // ∂Delta/∂σᵢ — standard vol-desk Greek
+  T charm{};                // ∂Delta/∂T  — standard for delta hedgers
 };
 
 // =============================================================================
@@ -77,4 +80,11 @@ template <typename T> struct MonteCarloResult<GreekMode::Full, T> {
 
   T rho;
   T rho_std_err;
+
+  // Cross-Greeks
+  std::array<T, 2> vanna{};
+  std::array<T, 2> vanna_std_err{};
+
+  T charm;
+  T charm_std_err;
 };

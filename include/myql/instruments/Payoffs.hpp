@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <cmath>
 #include <myql/core/PricingTypes.hpp>
-#include <vector>
 
 enum class OptionType { Call, Put };
 
