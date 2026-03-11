@@ -331,4 +331,5 @@ res.prices_std_err[i];   // MC only
 - Integration of geometric Asian options in the Fourier engine.
 - Implementation of Control Variates for Monte Carlo and quasi-Monte Carlo.
 - Implementation of a generalized **Calibration Module** to fit ASVJ models to market data.
-- Integration of advanced acceleration techniques: **Richardson-Romberg extrapolation**, **Random grids**, **Multilevel Monte Carlo (MLMC)**, and **MultiLevel Richardson-Romberg extrapolation  (ML2R)** methods.
+- Integration of Greeks for **Multilevel Monte Carlo (MLMC)**.
+- Integration of other acceleration techniques: **Richardson-Romberg extrapolation**, **Random grids**, and **MultiLevel Richardson-Romberg extrapolation  (ML2R)** methods.
