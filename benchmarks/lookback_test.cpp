@@ -16,7 +16,7 @@
 // Models tested: Black-Scholes (ZeroFactorModel / SchemeNV — no vol process)
 // Schemes:       SchemeNCI (via StepperTraits automatic deduction)
 // Steps:         252 (daily) and 2520 (10× finer) to verify convergence
-// Tolerance:     3σ of the MC standard error
+// Tolerance:     3sigma of the MC standard error
 // =============================================================================
 
 #include <cmath>

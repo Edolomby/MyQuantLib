@@ -196,8 +196,8 @@ private:
                                : (-T * K * df_r * (1.0 - P2));
         result.rho = S0 * df_q * dP1_dr + disc_term - K * df_r * dP2_dr;
 
-        // --- Vanna: ∂Delta/∂σᵢ ---
-        // Delta_call = df_q * P1  =>  vanna_call = df_q * ∂P1/∂v0
+        // --- Vanna: dDelta/dsigma_i ---
+        // Delta_call = df_q * P1  =>  vanna_call = df_q * dP1/dv0
         // dP1_dv0 is already computed in the Vega block above.
         result.vanna[0] =
             df_q * dP1_dv0 * Traits::template vega_chain_factor<0>(model);
@@ -211,8 +211,8 @@ private:
                             Traits::template vega_chain_factor<1>(model);
         }
 
-        // --- Charm: ∂Delta/∂T ---
-        // Delta_call = df_q * P1  =>  ∂/∂T[df_q*P1] = df_q*(-q*P1 + dP1/dT)
+        // --- Charm: dDelta/dT ---
+        // Delta_call = df_q * P1  =>  d/dT[df_q*P1] = df_q*(-q*P1 + dP1/dT)
         // dP1_dT is already computed in the Theta block above.
         if (OT == OptionType::Call) {
           result.charm = df_q * (-q * P1 + dP1_dT);

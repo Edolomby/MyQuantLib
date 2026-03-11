@@ -336,7 +336,7 @@ public:
           l_sum_vega[0] += path_vega0;
           l_sq_sum_vega[0] += path_vega0 * path_vega0;
 
-          // vanna[0] = ∂Delta/∂σ₀
+          // vanna[0] = dDelta/dsigma0
           ResultType path_vanna0 = ((d1_vup0 - d2_vup0) - (d1_vdn0 - d2_vdn0)) *
                                    (inv_2dv / (2.0 * h)) * c_v0;
           l_sum_vanna[0] += path_vanna0;
@@ -362,7 +362,7 @@ public:
             l_sum_vega[1] += path_vega1;
             l_sq_sum_vega[1] += path_vega1 * path_vega1;
 
-            // vanna[1] = ∂Delta/∂σ₁
+            // vanna[1] = dDelta/dsigma1
             ResultType path_vanna1 =
                 ((d1_vup1 - d2_vup1) - (d1_vdn1 - d2_vdn1)) *
                 (inv_2dv / (2.0 * h)) * c_v1;
@@ -387,7 +387,7 @@ public:
           l_sum_theta += path_theta;
           l_sq_sum_theta += path_theta * path_theta;
 
-          // charm = ∂Delta/∂T
+          // charm = dDelta/dT
           ResultType path_charm =
               ((d1_Tup - d2_Tup) * df_Tup - (d1_Tdn - d2_Tdn) * df_Tdn) *
               (inv_2dT / (2.0 * h));

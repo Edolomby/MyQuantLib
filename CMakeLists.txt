@@ -78,6 +78,7 @@ add_benchmark(LookbackTest benchmarks/lookback_test.cpp)
 add_benchmark(InFlightTest benchmarks/in_flight_test.cpp)
 add_benchmark(DigitalSmoothingTest benchmarks/digital_smoothing_test.cpp)
 add_benchmark(MCFullGreekVerifier benchmarks/mc_full_greek_verifier.cpp)
+add_benchmark(MLMCVerifier benchmarks/mlmc_verifier.cpp)
 
 # ==============================================================================
 # 5. STATUS REPORT

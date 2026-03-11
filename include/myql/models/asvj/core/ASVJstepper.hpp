@@ -116,11 +116,10 @@ public:
     }
   }
 
+  // Standard start_path
   void start_path(State &state, const typename TrackerPolicy::Config &cfg,
-                  double S0) const {
-    // Reset Physics (The Stepper's job)
+                  double S0) {
     state.logS = std::log(S0);
-    // Use the NumCirs template parameter to decide how much to initialize
     if constexpr (NumCirs >= 1)
       state.V[0] = std::get<0>(diffusion_data_).v0;
     if constexpr (NumCirs >= 2)
@@ -157,9 +156,8 @@ public:
       current_logS += jump;
 
       state.logS = current_logS;
-      TrackerPolicy::finalize(state, cfg, dt_, total_time); // eu=exp the logS
-
-      return; // EXIT EARLY
+      TrackerPolicy::finalize(state, cfg, dt_, total_time);
+      return;
     }
 
     // =======================================================================
@@ -316,6 +314,10 @@ using HestonStepper = ASVJStepper<VolScheme, NullVolScheme, NoJumps, Tracker>;
 template <typename VolScheme, typename Tracker = TrackerEuropean>
 using BatesStepper = ASVJStepper<VolScheme, NullVolScheme, MertonJump, Tracker>;
 
+// Bates-Kou Model
+template <typename VolScheme, typename Tracker = TrackerEuropean>
+using BatesKouStepper = ASVJStepper<VolScheme, NullVolScheme, KouJump, Tracker>;
+
 // --- DOUBLE FACTOR STEPPERS ---
 
 // Double Heston (Requires both VolSchemes, Tracker is optional)
@@ -329,5 +331,11 @@ template <typename VolScheme1, typename VolScheme2,
           typename Tracker = TrackerEuropean>
 using DoubleBatesStepper =
     ASVJStepper<VolScheme1, VolScheme2, MertonJump, Tracker>;
+
+// Double Bates-Kou Model
+template <typename VolScheme1, typename VolScheme2,
+          typename Tracker = TrackerEuropean>
+using DoubleBatesKouStepper =
+    ASVJStepper<VolScheme1, VolScheme2, KouJump, Tracker>;
 
 // `namespace myql {`) ? SHould I use it?

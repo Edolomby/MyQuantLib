@@ -55,6 +55,14 @@ struct SchemeNV {
     double root_term = std::sqrt(w.C[0] * v_curr + w.C[1]) + w.C[2] * Z_V;
     return w.C[0] * (root_term * root_term) + w.C[1];
   }
+
+  // Evolve function for custom Gaussian increments (Used for Standard MLMC
+  // Coupling)
+  static inline double evolve_coupled(double v_curr, double Z_V,
+                                      const Workspace &w) {
+    double root_term = std::sqrt(w.C[0] * v_curr + w.C[1]) + w.C[2] * Z_V;
+    return w.C[0] * (root_term * root_term) + w.C[1];
+  }
 };
 
 // =============================================================================
@@ -208,6 +216,12 @@ struct SchemeExact {
 
     return gamma_val * w.C[2];
   }
+
+  // Not strictly used for exact coupling, but interface compliance
+  static inline double evolve_coupled(double v_curr, double /*Z_V*/,
+                                      const Workspace &) {
+    return v_curr; // Exact schemes do not use Gaussian increments this way.
+  }
 };
 
 // =============================================================================
@@ -353,5 +367,11 @@ struct SchemeNCI {
         } */
     boost::math::chi_squared_distribution<double> dist(w.C[1] + 2.0 * N);
     return boost::math::quantile(dist, U) * w.C[2];
+  }
+
+  // Not strictly used for exact coupling, but interface compliance
+  static inline double evolve_coupled(double v_curr, double /*Z_V*/,
+                                      const Workspace &) {
+    return v_curr; // Exact schemes do not use Gaussian increments this way.
   }
 };

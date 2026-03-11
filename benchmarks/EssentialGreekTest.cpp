@@ -136,7 +136,7 @@ int main() {
   // ---------------------------------------------------------------------------
   MonteCarloConfig mc_cfg;
   mc_cfg.num_paths = 4000000;
-  mc_cfg.time_steps = 50;
+  mc_cfg.time_steps = 100;
   mc_cfg.seed = 42;
   mc_cfg.fd_bump = 1e-3;
 

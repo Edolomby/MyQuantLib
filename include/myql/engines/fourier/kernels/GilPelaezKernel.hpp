@@ -91,14 +91,14 @@ public:
       // Cross-Greek kernels: same as above but with Dx / Dxx weighting
       // -------------------------------------------------------------------------
     } else if constexpr (Target == KernelTarget::VegaDx) {
-      // ∂²V/∂S∂σᵢ kernel: d(psi)/dv0i * base  (Dx weighting = no 1/(iu))
+      // d²V/dSdsigma_i kernel: d(psi)/dv0i * base  (Dx weighting = no 1/(iu))
       Complex dpsi_dv0 =
           Traits::template d_cf_dv0<FactorIdx>(model_, u_shifted, T_);
       return std::real(base_term * dpsi_dv0);
 
     } else {
       // KernelTarget::ThetaDx
-      // ∂²V/∂S∂T kernel: (d(psi)/dT + iu*(r-q)) * base  (Dx weighting)
+      // d²V/dSdT kernel: (d(psi)/dT + iu*(r-q)) * base  (Dx weighting)
       Complex dpsi_dT = Traits::d_cf_dT(model_, u_shifted, T_);
       double rate_per_T = (T_ > 1e-12) ? (rate_drift_ / T_) : 0.0;
       Complex dT_factor = dpsi_dT + I * u * rate_per_T;
